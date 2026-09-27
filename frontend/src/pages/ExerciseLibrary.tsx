@@ -58,10 +58,19 @@ export function ExerciseLibraryPage() {
                 key={ex.id}
                 to={`/exercises/${ex.id}`}
                 title={`View ${ex.name}'s exercise page`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-border/20"
+                className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-border/20"
               >
-                <span className="text-sm">{ex.name}</span>
-                {ex.last_performed && <span className="text-xs text-muted">{ex.last_performed.summary}</span>}
+                <span className="flex min-w-0 items-center gap-3">
+                  {ex.template?.image_url ? (
+                    <img
+                      src={ex.template.image_url}
+                      alt=""
+                      className="h-8 w-8 shrink-0 rounded-md bg-border/40 object-cover"
+                    />
+                  ) : null}
+                  <span className="truncate text-sm">{ex.name}</span>
+                </span>
+                {ex.last_performed && <span className="shrink-0 text-xs text-muted">{ex.last_performed.summary}</span>}
               </Link>
             ))}
           </div>

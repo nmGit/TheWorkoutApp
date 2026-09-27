@@ -12,18 +12,27 @@ the source of truth for intended behavior.
 - **Frontend**: React + Vite + TypeScript, Tailwind CSS, TanStack Query, Recharts, React Router
 - **Backend**: Flask + SQLAlchemy + Alembic (Flask-Migrate), served by Waitress in production
 - **Database**: SQLite by default (`data/workout.db`), Postgres-compatible via `DATABASE_URL`
+- **Exercise templates**: sourced from the [exercises-dataset](https://github.com/hasaneyldrm/exercises-dataset)
+  submodule at `external/exercises-dataset` (data/instructions MIT-licensed;
+  exercise images © Gym visual, redistributed with permission — keep the
+  `© Gym visual — https://gymvisual.com/` attribution intact wherever they're shown)
 
 ## First-time setup
 
 ```bash
+# Clone with the exercises-dataset submodule (or run
+# `git submodule update --init --recursive` after a plain clone)
+git clone --recurse-submodules <this-repo-url>
+
 # Backend
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 export FLASK_APP=wsgi.py
-flask db upgrade                        # creates data/workout.db
-python3 scripts/seed_exercises.py       # seeds muscle groups + exercise library
+flask db upgrade                            # creates data/workout.db
+python3 scripts/seed_exercises.py           # seeds muscle groups + exercise library
+python3 scripts/seed_exercise_templates.py  # seeds exercise templates from external/exercises-dataset
 
 # Optional: import legacy workout history from a .ods spreadsheet
 pip install -r scripts/requirements.txt

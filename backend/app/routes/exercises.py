@@ -2,9 +2,14 @@ from flask import Blueprint, jsonify, request
 
 from app.extensions import db
 from app.models.exercise import EQUIPMENT_TYPES, TRACKING_TYPES, Exercise, MuscleGroup
+from app.models.exercise_template import ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import serialize_exercise, serialize_muscle_group
-from app.validation import ApiError, require
+from app.services.exercise_templates import (
+    equipment_type_for,
+    muscle_group_name_for_body_part,
+)
+from app.validation import ApiError
 
 bp = Blueprint("exercises", __name__, url_prefix="/api")
 
@@ -62,24 +67,68 @@ def list_exercises():
 @bp.post("/exercises")
 def create_exercise():
     body = request.get_json(force=True) or {}
-    require(body, "name", "muscle_group_id", "tracking_type")
 
-    if body["tracking_type"] not in TRACKING_TYPES:
-        raise ApiError(f"tracking_type must be one of {TRACKING_TYPES}")
-    equipment = body.get("equipment", "other")
-    if equipment not in EQUIPMENT_TYPES:
-        raise ApiError(f"equipment must be one of {EQUIPMENT_TYPES}")
-    if db.session.get(MuscleGroup, body["muscle_group_id"]) is None:
+    template = None
+    template_id = body.get("template_id")
+    if template_id is not None:
+        template = db.session.get(ExerciseTemplate, template_id)
+        if template is None:
+            raise ApiError("Unknown template_id", 404)
+
+    name = body.get("name") or (template.name if template else None)
+    if not name:
+        raise ApiError("Missing required field(s): name")
+
+    muscle_group_id = body.get("muscle_group_id")
+    if muscle_group_id is None and template is not None:
+        mg_name = muscle_group_name_for_body_part(template.body_part)
+        mg = MuscleGroup.query.filter_by(name=mg_name).first() if mg_name else None
+        muscle_group_id = mg.id if mg else None
+    if muscle_group_id is None:
+        raise ApiError("Missing required field(s): muscle_group_id")
+    group = db.session.get(MuscleGroup, muscle_group_id)
+    if group is None:
         raise ApiError("Unknown muscle_group_id", 404)
 
+    equipment = body.get("equipment")
+    if equipment is None:
+        equipment = equipment_type_for(template.equipment) if template else "other"
+    if equipment not in EQUIPMENT_TYPES:
+        raise ApiError(f"equipment must be one of {EQUIPMENT_TYPES}")
+
+    tracking_type = body.get("tracking_type")
+    if tracking_type is None:
+        if template is not None and template.body_part == "cardio":
+            tracking_type = "cardio"
+        elif equipment == "bodyweight":
+            tracking_type = "bodyweight_reps"
+        else:
+            tracking_type = "weight_reps"
+    if tracking_type not in TRACKING_TYPES:
+        raise ApiError(f"tracking_type must be one of {TRACKING_TYPES}")
+
+    if template is None:
+        # Every exercise is backed by a template: custom, from-scratch
+        # exercises get one auto-created here so they show up as reusable
+        # templates too, alongside the ones sourced from the dataset.
+        template = ExerciseTemplate(
+            name=name,
+            category=group.name,
+            equipment=equipment,
+            is_custom=True,
+        )
+        db.session.add(template)
+        db.session.flush()
+
     exercise = Exercise(
-        name=body["name"],
-        muscle_group_id=body["muscle_group_id"],
+        name=name,
+        muscle_group_id=muscle_group_id,
         equipment=equipment,
-        tracking_type=body["tracking_type"],
-        is_custom=True,
+        tracking_type=tracking_type,
+        is_custom=template.is_custom,
         default_rest_seconds=body.get("default_rest_seconds"),
         notes=body.get("notes"),
+        template_id=template.id,
     )
     db.session.add(exercise)
     db.session.commit()

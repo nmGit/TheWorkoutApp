@@ -19,3 +19,10 @@ class Config:
         "FRONTEND_DIST_DIR",
         os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist")),
     )
+
+    # Bundled exercises-dataset submodule (external/exercises-dataset), the
+    # source of built-in exercise templates and their images.
+    EXERCISE_DATASET_DIR = os.environ.get(
+        "EXERCISE_DATASET_DIR",
+        os.path.abspath(os.path.join(BASE_DIR, "..", "external", "exercises-dataset")),
+    )

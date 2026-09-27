@@ -12,19 +12,24 @@ Entity-relationship overview
 .. code-block:: text
 
    MuscleGroup 1───* Exercise 1───* TemplateExercise *───1 WorkoutTemplate
-                         │                                      │
-                         │                                      │ 1
-                         │ 1                                    │
-                         │                                      * (optional, workout.template_id)
-                         *                                       │
-                   WorkoutExercise *───────────────────────────1 Workout
-                         │ 1
-                         │
-                         *
-                     WorkoutSet
+                         │  │                                   │
+                         │  │ *                                 │ 1
+                         │  │                                   │
+                         │  1                                   * (optional, workout.template_id)
+                         │  ExerciseTemplate                     │
+                         │                                 WorkoutExercise *───────────────────────────1 Workout
+                         │ 1                                     │ 1
+                         │                                       │
+                         *                                       *
+                   WorkoutExercise                           WorkoutSet
 
    BodyweightEntry            (standalone, date + weight)
    UserSettings                (singleton row)
+
+Every ``Exercise`` optionally points at one ``ExerciseTemplate`` via
+``Exercise.template_id`` — the blueprint it was created from, which is
+where the app's image and step-by-step instructions live (see
+``ExerciseTemplate`` below and :doc:`features/exercise_library`).
 
 Core tables
 -----------
@@ -88,6 +93,77 @@ Core tables
    * - notes
      - text, nullable
      - Free-text (form cues, etc.)
+   * - template_id
+     - FK -> ExerciseTemplate, nullable
+     - The template this exercise was created from. Set for every exercise
+       created through the exercise picker (dataset-sourced or custom —
+       see ``ExerciseTemplate`` below); null only for pre-existing rows
+       from before templates existed.
+
+``ExerciseTemplate``
+~~~~~~~~~~~~~~~~~~~~~
+
+A reusable exercise blueprint, sourced either from the bundled
+exercises-dataset submodule (``external/exercises-dataset``, imported by
+``scripts/seed_exercise_templates.py``) or authored by a user as a custom
+exercise. See :doc:`features/exercise_library` for how these surface in
+the UI.
+
+.. list-table::
+   :widths: 22 22 56
+   :header-rows: 1
+
+   * - Column
+     - Type
+     - Notes
+   * - id
+     - PK
+     -
+   * - external_id
+     - string, unique, nullable
+     - The dataset's own id (e.g. ``"0001"``); null for custom templates.
+   * - name
+     - string
+     -
+   * - category / body_part
+     - string, nullable
+     - Dataset vocabulary, e.g. ``upper legs``. Not the same list as
+       ``MuscleGroup.name`` — mapped onto the closest ``MuscleGroup`` at
+       exercise-creation time (see ``app/services/exercise_templates.py``).
+   * - equipment
+     - string, nullable
+     - Dataset's free-text equipment (e.g. ``leverage machine``), mapped
+       onto ``Exercise.equipment``'s fixed enum at creation time.
+   * - target_muscle / muscle_group
+     - string, nullable
+     - Primary target muscle and its synergist group, from the dataset.
+   * - secondary_muscles
+     - JSON list of strings, nullable
+     -
+   * - instructions
+     - text, nullable
+     - Full English instructions as a single paragraph.
+   * - instruction_steps
+     - JSON list of strings, nullable
+     - Same instructions split into ordered steps; only English is
+       imported even though the dataset ships 10 languages.
+   * - image_path
+     - string, nullable
+     - Path relative to the dataset checkout (e.g.
+       ``images/0001-2gPfomN.jpg``); served via
+       ``GET /api/exercise-templates/<id>/image``.
+   * - attribution
+     - string, nullable
+     - Media copyright notice (``© Gym visual — https://gymvisual.com/``)
+       required by the dataset's media license; shown wherever the image
+       is displayed.
+   * - is_custom
+     - bool
+     - ``false`` for dataset-sourced templates, ``true`` for
+       user-authored ones.
+   * - created_at
+     - datetime
+     -
 
 ``WorkoutTemplate``
 ~~~~~~~~~~~~~~~~~~~~

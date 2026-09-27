@@ -4,6 +4,7 @@ from app.validation import ApiError, error_response
 
 
 def register_routes(app: Flask) -> None:
+    from app.routes.exercise_templates import bp as exercise_templates_bp
     from app.routes.exercises import bp as exercises_bp
     from app.routes.settings import bp as settings_bp
     from app.routes.stats import bp as stats_bp
@@ -11,6 +12,7 @@ def register_routes(app: Flask) -> None:
     from app.routes.workouts import bp as workouts_bp
 
     app.register_blueprint(exercises_bp)
+    app.register_blueprint(exercise_templates_bp)
     app.register_blueprint(templates_bp)
     app.register_blueprint(workouts_bp)
     app.register_blueprint(stats_bp)

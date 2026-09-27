@@ -44,6 +44,35 @@ export function ExerciseDetailPage() {
         {exercise.muscle_group_name} · {exercise.equipment}
       </p>
 
+      {exercise.template && (exercise.template.image_url || exercise.template.instruction_steps.length > 0) && (
+        <Card className="space-y-3">
+          {exercise.template.image_url && (
+            <div>
+              <img
+                src={exercise.template.image_url}
+                alt={exercise.name}
+                className="mx-auto h-40 w-40 rounded-lg bg-border/40 object-cover"
+              />
+              {exercise.template.attribution && (
+                <p className="mt-1 text-center text-[11px] text-muted">{exercise.template.attribution}</p>
+              )}
+            </div>
+          )}
+          {exercise.template.instruction_steps.length > 0 && (
+            <div>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
+                How to perform it
+              </h2>
+              <ol className="list-decimal space-y-1.5 pl-5 text-sm">
+                {exercise.template.instruction_steps.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </Card>
+      )}
+
       <Card className="space-y-3">
         <div className="flex gap-1.5">
           {availableMetrics.map((m) => (

@@ -58,12 +58,13 @@ export function useCreateExercise() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: {
-      name: string
-      muscle_group_id: number
+      name?: string
+      muscle_group_id?: number
       equipment?: Equipment
-      tracking_type: TrackingType
+      tracking_type?: TrackingType
       default_rest_seconds?: number
       notes?: string
+      template_id?: number
     }) => api.post<Exercise>('/exercises', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: exerciseKeys.all }),
   })

@@ -51,9 +51,13 @@ class Exercise(db.Model):
     is_custom = db.Column(db.Boolean, nullable=False, default=True)
     default_rest_seconds = db.Column(db.Integer, nullable=True)
     notes = db.Column(db.Text, nullable=True)
+    template_id = db.Column(
+        db.Integer, db.ForeignKey("exercise_templates.id"), nullable=True
+    )
     created_at = db.Column(db.DateTime(timezone=True), default=_utcnow, nullable=False)
 
     muscle_group = db.relationship("MuscleGroup", back_populates="exercises")
+    template = db.relationship("ExerciseTemplate", back_populates="exercises")
     workout_exercises = db.relationship(
         "WorkoutExercise", back_populates="exercise", cascade="none"
     )

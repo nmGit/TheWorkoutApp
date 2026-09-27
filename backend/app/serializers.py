@@ -13,6 +13,41 @@ def serialize_muscle_group(mg):
     return {"id": mg.id, "name": mg.name, "display_order": mg.display_order}
 
 
+def serialize_exercise_template(template):
+    return {
+        "id": template.id,
+        "external_id": template.external_id,
+        "name": template.name,
+        "category": template.category,
+        "body_part": template.body_part,
+        "equipment": template.equipment,
+        "target_muscle": template.target_muscle,
+        "muscle_group": template.muscle_group,
+        "secondary_muscles": template.secondary_muscles or [],
+        "instructions": template.instructions,
+        "instruction_steps": template.instruction_steps or [],
+        "image_url": f"/api/exercise-templates/{template.id}/image" if template.image_path else None,
+        "attribution": template.attribution,
+        "is_custom": template.is_custom,
+    }
+
+
+def _exercise_template_summary(template):
+    """Slim view of a template embedded on an Exercise: just what the
+    exercise detail page needs to render the template's image and English
+    step-by-step instructions."""
+    if template is None:
+        return None
+    return {
+        "id": template.id,
+        "instructions": template.instructions,
+        "instruction_steps": template.instruction_steps or [],
+        "image_url": f"/api/exercise-templates/{template.id}/image" if template.image_path else None,
+        "attribution": template.attribution,
+        "is_custom": template.is_custom,
+    }
+
+
 def serialize_exercise(exercise, last_performed=None):
     data = {
         "id": exercise.id,
@@ -24,6 +59,8 @@ def serialize_exercise(exercise, last_performed=None):
         "is_custom": exercise.is_custom,
         "default_rest_seconds": exercise.default_rest_seconds,
         "notes": exercise.notes,
+        "template_id": exercise.template_id,
+        "template": _exercise_template_summary(exercise.template),
     }
     if last_performed is not None:
         data["last_performed"] = last_performed

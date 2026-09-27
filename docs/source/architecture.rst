@@ -24,6 +24,18 @@ production, ``npm run build`` emits static assets that Flask serves
 directly, so the whole app is a single Waitress process plus one database
 file — deliberately simple to host.
 
+``external/exercises-dataset`` is a git submodule
+(https://github.com/hasaneyldrm/exercises-dataset) vendored at the repo
+root: the source of the built-in exercise template library (name,
+body part/equipment, English step-by-step instructions, and a thumbnail
+image per exercise). It never touches application code directly — the
+backend reads it only through ``scripts/seed_exercise_templates.py``,
+which imports it into the ``exercise_templates`` table, and through the
+``/api/exercise-templates/<id>/image`` route, which streams a thumbnail
+straight out of the checkout. Clone with
+``git clone --recurse-submodules``, or run
+``git submodule update --init --recursive`` after a plain clone.
+
 Backend layout
 ---------------
 
@@ -45,10 +57,13 @@ Backend layout
        import_strong_csv.py      # ongoing importer, re-run per fresh Strong export
        backfill_workout_names.py # one-off: real names/timestamps for spreadsheet-era workouts
        seed_exercises.py         # seeds the built-in exercise library
+       seed_exercise_templates.py # imports external/exercises-dataset into exercise_templates
        ods_parser.py             # spreadsheet cell-format parsing, used by import_ods.py
      tests/
      wsgi.py              # Waitress entrypoint (production)
      run_dev.py           # Flask dev server entrypoint (development)
+   external/
+     exercises-dataset/   # git submodule: exercise template data + images
 
 The API is versionless (``/api/...``) since it is a first-party API for
 this app's own frontend, not a public integration surface. All endpoints
@@ -122,6 +137,10 @@ Backend configuration is environment-variable driven (12-factor style):
    * - ``PORT``
      - ``8000``
      - Port Waitress binds to.
+   * - ``EXERCISE_DATASET_DIR``
+     - ``../external/exercises-dataset``
+     - Path to the exercises-dataset submodule checkout, read by
+       ``seed_exercise_templates.py`` and the template image route.
 
 Deployment is intentionally left to the user (per project scope) — the app
 just needs to run ``python wsgi.py`` (or any WSGI-compatible process

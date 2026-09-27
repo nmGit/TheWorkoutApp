@@ -22,6 +22,26 @@ export interface LastPerformed {
   summary: string
 }
 
+export interface ExerciseTemplateSummary {
+  id: number
+  instructions: string | null
+  instruction_steps: string[]
+  image_url: string | null
+  attribution: string | null
+  is_custom: boolean
+}
+
+export interface ExerciseTemplate extends ExerciseTemplateSummary {
+  external_id: string | null
+  name: string
+  category: string | null
+  body_part: string | null
+  equipment: string | null
+  target_muscle: string | null
+  muscle_group: string | null
+  secondary_muscles: string[]
+}
+
 export interface Exercise {
   id: number
   name: string
@@ -32,6 +52,8 @@ export interface Exercise {
   is_custom: boolean
   default_rest_seconds: number | null
   notes: string | null
+  template_id: number | null
+  template: ExerciseTemplateSummary | null
   last_performed?: LastPerformed | null
 }
 
