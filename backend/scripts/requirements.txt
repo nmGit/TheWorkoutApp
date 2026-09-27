@@ -1,0 +1,4 @@
+# Extra deps only needed for the one-off legacy spreadsheet import,
+# kept out of the main app's requirements.txt.
+pandas>=2.2
+odfpy>=1.4.1

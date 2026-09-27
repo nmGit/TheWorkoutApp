@@ -1,0 +1,447 @@
+{
+  "muscle_groups": [
+    "Chest",
+    "Back",
+    "Shoulders",
+    "Arms",
+    "Core",
+    "Legs",
+    "Full Body",
+    "Cardio",
+    "Mobility"
+  ],
+  "exercises": [
+    {
+      "name": "Stretching",
+      "muscle_group": "Mobility",
+      "equipment": "other",
+      "tracking_type": "time"
+    },
+    {
+      "name": "Deadlift (Barbell)",
+      "muscle_group": "Back",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Kettlebell Swing",
+      "muscle_group": "Full Body",
+      "equipment": "kettlebell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Sumo Deadlift High Pull",
+      "muscle_group": "Full Body",
+      "equipment": "other",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Stair Stepper",
+      "muscle_group": "Cardio",
+      "equipment": "machine",
+      "tracking_type": "cardio"
+    },
+    {
+      "name": "Walking",
+      "muscle_group": "Cardio",
+      "equipment": "other",
+      "tracking_type": "cardio"
+    },
+    {
+      "name": "Elliptical",
+      "muscle_group": "Cardio",
+      "equipment": "machine",
+      "tracking_type": "cardio"
+    },
+    {
+      "name": "Rowing Machine",
+      "muscle_group": "Cardio",
+      "equipment": "machine",
+      "tracking_type": "cardio"
+    },
+    {
+      "name": "Treadmill Run",
+      "muscle_group": "Cardio",
+      "equipment": "machine",
+      "tracking_type": "cardio"
+    },
+    {
+      "name": "Indoor Cycling",
+      "muscle_group": "Cardio",
+      "equipment": "machine",
+      "tracking_type": "cardio"
+    },
+    {
+      "name": "Bench Press",
+      "muscle_group": "Chest",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Incline Bench (Barbell)",
+      "muscle_group": "Chest",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Incline Bench (Dumbbell)",
+      "muscle_group": "Chest",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Chest Fly (Dumbbell)",
+      "muscle_group": "Chest",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Push Up",
+      "muscle_group": "Chest",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Chest Dip",
+      "muscle_group": "Chest",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Lat Pulldown",
+      "muscle_group": "Back",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Seated Row (Cable)",
+      "muscle_group": "Back",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Bent Over Row (Barbell)",
+      "muscle_group": "Back",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "One Arm Row (Dumbbell)",
+      "muscle_group": "Back",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Assisted Pull Up",
+      "muscle_group": "Back",
+      "equipment": "machine",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Back Extension",
+      "muscle_group": "Back",
+      "equipment": "machine",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Straight Arm Pushdown",
+      "muscle_group": "Back",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Shrug (Barbell)",
+      "muscle_group": "Back",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Military Press",
+      "muscle_group": "Shoulders",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Overhead Press (Barbell)",
+      "muscle_group": "Shoulders",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Seated Shoulder Press (DB)",
+      "muscle_group": "Shoulders",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Arnold Press (Dumbbell)",
+      "muscle_group": "Shoulders",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Lateral Raise (Dumbbell)",
+      "muscle_group": "Shoulders",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Lateral Raise (Cable)",
+      "muscle_group": "Shoulders",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Upright Row (Dumbbell)",
+      "muscle_group": "Shoulders",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Reverse Fly (Machine)",
+      "muscle_group": "Shoulders",
+      "equipment": "machine",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Reverse Fly (Dumbbell)",
+      "muscle_group": "Shoulders",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Face Pull (Cable)",
+      "muscle_group": "Shoulders",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Tricep Pushdown",
+      "muscle_group": "Arms",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Bicep Curl (Dumbbell)",
+      "muscle_group": "Arms",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Bicep Curl (Barbell)",
+      "muscle_group": "Arms",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Hammer Curl (Dumbbell)",
+      "muscle_group": "Arms",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Hammer Curl (Cable)",
+      "muscle_group": "Arms",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Preacher Curl (Barbell)",
+      "muscle_group": "Arms",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Reverse Curl (Barbell)",
+      "muscle_group": "Arms",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Forearm Curl",
+      "muscle_group": "Arms",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Tricep Extension",
+      "muscle_group": "Arms",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Tricep Extension (Cable)",
+      "muscle_group": "Arms",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Skullcrusher (Barbell)",
+      "muscle_group": "Arms",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Skullcrusher (Dumbbell)",
+      "muscle_group": "Arms",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Tricep Dip",
+      "muscle_group": "Arms",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Hanging Leg Raise",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Plank",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "time"
+    },
+    {
+      "name": "V-Up",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Cross Body Crunch",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Hanging Knee Raise",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Flat Leg Raise",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Flat Knee Raise",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Captain's Chair Knee Raise",
+      "muscle_group": "Core",
+      "equipment": "machine",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Sit Up",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Crunch",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Bicycle Crunch",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Oblique Crunch",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Side Plank",
+      "muscle_group": "Core",
+      "equipment": "bodyweight",
+      "tracking_type": "time"
+    },
+    {
+      "name": "Squat",
+      "muscle_group": "Legs",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Goblet Squat",
+      "muscle_group": "Legs",
+      "equipment": "kettlebell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Leg Extension",
+      "muscle_group": "Legs",
+      "equipment": "machine",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Leg Press",
+      "muscle_group": "Legs",
+      "equipment": "machine",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Bulgarian Split Squat",
+      "muscle_group": "Legs",
+      "equipment": "other",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Lunge (Dumbbell)",
+      "muscle_group": "Legs",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Standing Calf Raise (DB)",
+      "muscle_group": "Legs",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Standing Calf Raise (BW)",
+      "muscle_group": "Legs",
+      "equipment": "bodyweight",
+      "tracking_type": "bodyweight_reps"
+    },
+    {
+      "name": "Seated Calf Raise",
+      "muscle_group": "Legs",
+      "equipment": "machine",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Seated Palms Up Wrist Curl (Dumbbell)",
+      "muscle_group": "Arms",
+      "equipment": "dumbbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Strict Military Press (Barbell)",
+      "muscle_group": "Shoulders",
+      "equipment": "barbell",
+      "tracking_type": "weight_reps"
+    },
+    {
+      "name": "Triceps Pushdown (Cable - Straight Bar)",
+      "muscle_group": "Arms",
+      "equipment": "cable",
+      "tracking_type": "weight_reps"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #f7f7f5;
+  --color-surface: #ffffff;
+  --color-fg: #1a1a1a;
+  --color-muted: #6b6b6b;
+  --color-border: #e2e2df;
+  --color-accent: #2563eb;
+  --color-accent-fg: #ffffff;
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-bg: #121212;
+    --color-surface: #1c1c1c;
+    --color-fg: #f2f2f2;
+    --color-muted: #9a9a9a;
+    --color-border: #2e2e2e;
+    --color-accent: #3b82f6;
+    --color-accent-fg: #0a0a0a;
+    --color-danger: #f87171;
+    --color-success: #4ade80;
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #121212;
+  --color-surface: #1c1c1c;
+  --color-fg: #f2f2f2;
+  --color-muted: #9a9a9a;
+  --color-border: #2e2e2e;
+  --color-accent: #3b82f6;
+  --color-accent-fg: #0a0a0a;
+  --color-danger: #f87171;
+  --color-success: #4ade80;
+}
+
+@theme {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-fg: var(--color-fg);
+  --color-muted: var(--color-muted);
+  --color-border: var(--color-border);
+  --color-accent: var(--color-accent);
+  --color-accent-fg: var(--color-accent-fg);
+  --color-danger: var(--color-danger);
+  --color-success: var(--color-success);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  -webkit-tap-highlight-color: transparent;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
