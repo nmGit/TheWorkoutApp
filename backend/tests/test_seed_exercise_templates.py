@@ -221,3 +221,11 @@ def test_curated_creates_missing_custom_exercise_on_fresh_install(app, datasets)
     summary = seed(app)
     template = _by_name("My Own Move")
     assert template.is_custom and template.external_id is None and summary["curated_created"] == 1
+
+
+def test_curated_name_differing_only_in_case_does_not_duplicate_on_reseed(app, datasets):
+    curated = [{"name": "Chest Dip", "muscle_group": "Chest", "equipment": "bodyweight", "tracking_type": "bodyweight_reps"}]
+    datasets.write(legacy=[_legacy("0001", "chest dip", body_part="chest")], curated_exercises=curated)
+    seed(app)
+    seed(app)
+    assert ExerciseTemplate.query.count() == 1

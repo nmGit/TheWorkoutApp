@@ -157,7 +157,7 @@ def seed_curated(created_legacy, summary):
         group_id = _muscle_group_id(item["muscle_group"])
         target = created_legacy.get(item["name"].lower())
         if target is None:
-            if ExerciseTemplate.query.filter_by(name=item["name"]).first() is not None:
+            if ExerciseTemplate.query.filter(db.func.lower(ExerciseTemplate.name) == item["name"].lower()).first() is not None:
                 continue
             target = ExerciseTemplate(name=item["name"], is_custom=True)
             db.session.add(target)

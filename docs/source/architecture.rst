@@ -72,6 +72,9 @@ Backend layout
      tests/
      wsgi.py              # Waitress entrypoint (production)
      run_dev.py           # Flask dev server entrypoint (development)
+   scripts/
+     setup-everything.sh       # install/update everything (venv, deps, DB, build) and start production
+     setup.env.example         # template for the script's optional setup.env (port, database location)
    external/
      exercises-dataset/        # git submodule: the original exercise dataset (fallback)
      repdb-exercise-dataset/   # git submodule: RepDB (preferred where it covers an exercise)
@@ -148,6 +151,10 @@ Backend configuration is environment-variable driven (12-factor style):
    * - ``PORT``
      - ``8000``
      - Port Waitress binds to.
+
+``scripts/setup-everything.sh`` sets these for you: ``--port``, ``--db``/
+``--database-url`` (or ``PORT``/``DATABASE_URL`` in the environment or a
+``setup.env`` file; flags beat the environment, which beats the file).
 
 Deployment is intentionally left to the user (per project scope) — the app
 just needs to run ``python wsgi.py`` (or any WSGI-compatible process

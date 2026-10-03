@@ -45,6 +45,26 @@ cd ../frontend
 npm install
 ```
 
+### One command (Raspberry Pi / any server)
+
+```bash
+./scripts/setup-everything.sh            # install/update everything, then run the production server
+./scripts/setup-everything.sh --detach   # same, but keep it running in the background
+```
+
+Safe to re-run any time as a "clean reset": it installs missing system packages,
+pulls the latest code, updates the dataset submodules, creates the Python venv and
+upgrades its packages, installs a suitable Node.js if needed, backs up and migrates
+the database, re-seeds the exercise catalog, rebuilds the frontend and restarts the
+server on `$PORT` (default 8000). `--fresh` also rebuilds the venv and `node_modules`
+from scratch; `--help` lists the rest. Settings can be passed as flags
+(`--port 8080`, `--db /path/to/workout.db`, `--database-url ...`), environment
+variables (`PORT`, `DATABASE_URL`), or a config file: copy
+[`scripts/setup.env.example`](scripts/setup.env.example) to `setup.env` (git-ignored,
+picked up automatically) or point at one with `--config FILE`. Flags beat the
+environment, which beats the file. By default the database is `data/workout.db`. Your `data/workout.db` is not in git, so copy
+it to the Pi's `data/` folder first if you want your history there.
+
 ## Running in development
 
 ```bash

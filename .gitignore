@@ -1,5 +1,6 @@
 # Python
 backend/.venv/
+venv/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -27,3 +28,6 @@ data/*.sqlite3
 
 # Local DB backups made before one-off data migrations
 data/*.db.*
+
+# Local settings for scripts/setup-everything.sh
+setup.env
