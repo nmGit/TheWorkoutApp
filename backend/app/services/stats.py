@@ -4,10 +4,11 @@ Everything here is computed on read from WorkoutSet rows rather than
 stored/cached, per docs/data_model.rst "Business rules" — cheap at
 single-user data volumes and avoids a PR cache to keep in sync.
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 
 from app.extensions import db
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
+from app.services.dates import local_date, local_midnight_utc
 from app.services.units import convert_weight, meters_to_unit
 
 RANGE_DAYS = {"3m": 90, "6m": 182, "12m": 365, "all": None}
@@ -31,7 +32,7 @@ def _completed_sets_query(exercise_id: int):
 
 
 def _session_date(workout: Workout) -> date:
-    return workout.started_at.date()
+    return local_date(workout.started_at)
 
 
 def get_exercise_series(exercise, metric: str, range_key: str, weight_unit: str, distance_unit: str):
@@ -221,12 +222,10 @@ def compute_streak_weeks(workout_dates: set[date]) -> int:
 
 
 def get_dashboard(weight_unit: str, distance_unit: str):
-    from app.models.exercise import Exercise
-
     active = Workout.query.filter(Workout.completed_at.is_(None)).first()
 
     completed_dates = {
-        w.started_at.date()
+        local_date(w.started_at)
         for w in Workout.query.filter(Workout.completed_at.isnot(None)).all()
     }
     streak = compute_streak_weeks(completed_dates)
@@ -241,10 +240,10 @@ def get_dashboard(weight_unit: str, distance_unit: str):
 
 
 def _recent_prs(weight_unit: str, distance_unit: str, days: int = 7):
-    from app.models.exercise import Exercise
+    from app.models.exercise_template import ExerciseTemplate
 
     cutoff = date.today() - timedelta(days=days)
-    cutoff_dt = datetime(cutoff.year, cutoff.month, cutoff.day, tzinfo=timezone.utc)
+    cutoff_dt = local_midnight_utc(cutoff)
     results = []
 
     exercise_ids = (
@@ -257,7 +256,7 @@ def _recent_prs(weight_unit: str, distance_unit: str, days: int = 7):
     )
 
     for (exercise_id,) in exercise_ids:
-        exercise = db.session.get(Exercise, exercise_id)
+        exercise = db.session.get(ExerciseTemplate, exercise_id)
         if exercise is None:
             continue
         prs = get_exercise_prs(exercise, weight_unit, distance_unit)

@@ -20,13 +20,14 @@ Usage:
 import argparse
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app
 from app.extensions import db
 from app.models.workout import Workout
+from app.services.dates import local_date, to_utc
 from scripts.import_strong_csv import _i, group_by_workout, load_rows
 
 
@@ -36,12 +37,12 @@ def backfill(path: str) -> None:
 
     by_date: dict[str, tuple[str, datetime, datetime]] = {}
     for workout_rows in grouped.values():
-        started_at = datetime.strptime(workout_rows[0]["Date"], "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=timezone.utc
-        )
+        # Strong exports local wall-clock time, not UTC -- see the matching
+        # comment in scripts/import_strong_csv.py.
+        started_at = to_utc(datetime.strptime(workout_rows[0]["Date"], "%Y-%m-%d %H:%M:%S"))
         duration = _i(workout_rows[0]["Duration (sec)"]) or 0
         name = workout_rows[0]["Workout Name"] or "Workout"
-        by_date[started_at.date().isoformat()] = (name, started_at, started_at + timedelta(seconds=duration))
+        by_date[local_date(started_at).isoformat()] = (name, started_at, started_at + timedelta(seconds=duration))
 
     renamed = 0
     retimed = 0
@@ -49,7 +50,7 @@ def backfill(path: str) -> None:
     unmatched = []
 
     for workout in Workout.query.filter(Workout.completed_at.isnot(None)).all():
-        key = workout.started_at.date().isoformat()
+        key = local_date(workout.started_at).isoformat()
         if key not in by_date:
             unmatched.append(key)
             continue

@@ -10,7 +10,7 @@ are transmitted as JSON numbers.
 .. toctree::
    :maxdepth: 1
 
-   exercises
+   exercise_templates
    templates
    workouts
    stats

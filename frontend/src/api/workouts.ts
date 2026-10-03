@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Workout, WorkoutSet, WorkoutSummary } from '../types'
+import type { Workout, WorkoutExercise, WorkoutSet, WorkoutSummary } from '../types'
 
 export const workoutKeys = {
   all: ['workouts'] as const,
@@ -87,6 +87,36 @@ export function useRemoveWorkoutExercise(workoutId: number) {
     mutationFn: (workoutExerciseId: number) =>
       api.delete(`/workouts/${workoutId}/exercises/${workoutExerciseId}`),
     onSuccess: () => invalidateWorkout(qc, workoutId),
+  })
+}
+
+/** Optimistic, unlike the other mutations here: the drag gesture already
+ * shows the new order live via direct DOM transforms (see
+ * `useDragReorder`), but those transforms are cleared the instant the
+ * gesture ends -- without writing the reordered list into the cache
+ * immediately, the list would visibly snap back to the old order for the
+ * length of the round-trip. */
+export function useReorderWorkoutExercises(workoutId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (exerciseIds: number[]) =>
+      api.patch<Workout>(`/workouts/${workoutId}/exercises/reorder`, { exercise_ids: exerciseIds }),
+    onMutate: async (exerciseIds: number[]) => {
+      await qc.cancelQueries({ queryKey: workoutKeys.active })
+      const previous = qc.getQueryData<Workout | null>(workoutKeys.active)
+      if (previous) {
+        const byId = new Map(previous.exercises.map((we) => [we.id, we]))
+        const reordered = exerciseIds
+          .map((id) => byId.get(id))
+          .filter((we): we is WorkoutExercise => we !== undefined)
+        qc.setQueryData<Workout>(workoutKeys.active, { ...previous, exercises: reordered })
+      }
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) qc.setQueryData(workoutKeys.active, context.previous)
+    },
+    onSettled: () => invalidateWorkout(qc, workoutId),
   })
 }
 

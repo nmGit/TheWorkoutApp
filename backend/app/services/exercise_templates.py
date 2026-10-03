@@ -48,7 +48,122 @@ def muscle_group_name_for_body_part(body_part: str | None) -> str | None:
     return BODY_PART_TO_MUSCLE_GROUP.get(body_part.lower())
 
 
+def body_parts_for_muscle_group(muscle_group_name: str) -> list[str]:
+    """Reverse of BODY_PART_TO_MUSCLE_GROUP: every dataset body_part that
+    maps onto this app's given MuscleGroup name. Used to filter the
+    dataset-sourced template catalog by this app's own muscle group list
+    (Full Body/Mobility have no dataset body_part and always return [])."""
+    return [bp for bp, mg in BODY_PART_TO_MUSCLE_GROUP.items() if mg == muscle_group_name]
+
+
 def equipment_type_for(equipment: str | None) -> str:
     if not equipment:
         return "other"
     return EQUIPMENT_TO_TYPE.get(equipment.lower(), "other")
+
+
+# --- RepDB (external/repdb-exercise-dataset) -------------------------------
+#
+# Used only when *creating* a new template from a RepDB entry, to fill the
+# app's own fixed-vocabulary filter columns (muscle_group_id / equipment /
+# tracking_type), which RepDB doesn't provide. RepDB's own muscle, image and
+# text data is stored as-is and never goes through these tables.
+
+# RepDB body_part -> this app's MuscleGroup.name (cardio/stretching are
+# categories in RepDB, handled in muscle_group_name_for_repdb)
+REPDB_BODY_PART_TO_MUSCLE_GROUP = {
+    "chest": "Chest",
+    "back": "Back",
+    "shoulders": "Shoulders",
+    "core": "Core",
+    "upper_arms": "Arms",
+    "lower_arms": "Arms",
+    "upper_legs": "Legs",
+    "lower_legs": "Legs",
+    "full_body": "Full Body",
+}
+
+# RepDB equipment slug -> this app's EQUIPMENT_TYPES enum. Missing/None means
+# bodyweight (RepDB omits `equipment` for bodyweight-only moves).
+REPDB_EQUIPMENT_TO_TYPE = {
+    "barbell": "barbell",
+    "ez_bar": "barbell",
+    "trap_bar": "barbell",
+    "dumbbell": "dumbbell",
+    "kettlebell": "kettlebell",
+    "cable": "cable",
+    "pull_up_bar": "bodyweight",
+    "dip_station": "bodyweight",
+    "rings": "bodyweight",
+    "suspension_trainer": "bodyweight",
+    "ab_crunch_machine": "machine",
+    "air_bike": "machine",
+    "assisted_pullup_machine": "machine",
+    "back_extension_machine": "machine",
+    "bicep_curl_machine": "machine",
+    "chest_fly_machine": "machine",
+    "chest_press_machine": "machine",
+    "dip_machine": "machine",
+    "donkey_calf_raise_machine": "machine",
+    "elliptical": "machine",
+    "glute_ham_developer": "machine",
+    "hack_squat": "machine",
+    "hip_abduction_machine": "machine",
+    "hip_adduction_machine": "machine",
+    "hip_thrust_machine": "machine",
+    "lat_pulldown_machine": "machine",
+    "leg_curl": "machine",
+    "leg_extension": "machine",
+    "leg_press": "machine",
+    "pec_deck": "machine",
+    "plate_loaded_lateral_raise_machine": "machine",
+    "preacher_curl_machine": "machine",
+    "rower": "machine",
+    "seated_calf_raise_machine": "machine",
+    "shoulder_press_machine": "machine",
+    "shrug_machine": "machine",
+    "ski_erg": "machine",
+    "smith_machine": "machine",
+    "stair_climber": "machine",
+    "standing_calf_raise_machine": "machine",
+    "stationary_bike": "machine",
+    "treadmill": "machine",
+    "tricep_extension_machine": "machine",
+    "ab_wheel": "other",
+    "battle_rope": "other",
+    "climbing_rope": "other",
+    "flat_bench": "other",
+    "jump_rope": "other",
+    "loop_band": "other",
+    "plates": "other",
+    "plyo_box": "other",
+    "resistance_band": "other",
+    "slam_ball": "other",
+    "sled": "other",
+    "stability_ball": "other",
+    "wrist_roller": "other",
+}
+
+
+def muscle_group_name_for_repdb(category: str | None, body_part: str | None) -> str | None:
+    if category == "cardio":
+        return "Cardio"
+    if category == "stretching":
+        return "Mobility"
+    return REPDB_BODY_PART_TO_MUSCLE_GROUP.get((body_part or "").lower())
+
+
+def equipment_type_for_repdb(equipment: str | None) -> str:
+    if not equipment:
+        return "bodyweight"
+    return REPDB_EQUIPMENT_TO_TYPE.get(equipment.lower(), "other")
+
+
+def tracking_type_for_repdb(item: dict) -> str:
+    if item.get("category") == "cardio":
+        return "cardio"
+    if item.get("category") == "stretching" or item.get("force_type") == "static":
+        return "time"
+    if item.get("is_bodyweight"):
+        return "bodyweight_reps"
+    return "weight_reps"

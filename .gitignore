@@ -24,3 +24,6 @@ data/*.sqlite3
 .vscode/
 .idea/
 .DS_Store
+
+# Local DB backups made before one-off data migrations
+data/*.db.*

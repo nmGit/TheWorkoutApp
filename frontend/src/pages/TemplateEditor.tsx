@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
 import { ExercisePicker } from '../components/ExercisePicker'
-import { Button, Card, LoadingState, PageTitle } from '../components/ui'
-import type { Exercise, TemplateExercise } from '../types'
+import { Button, Card, DragHandle, LoadingState, PageTitle } from '../components/ui'
+import { useDragReorder } from '../hooks/useDragReorder'
+import type { ExerciseTemplate, TemplateExercise } from '../types'
 
 export function TemplateEditorPage() {
   const { id } = useParams()
@@ -23,8 +24,6 @@ export function TemplateEditorPage() {
     }
   }, [template])
 
-  if (isLoading || !template) return <LoadingState />
-
   const persist = (next: TemplateExercise[]) => {
     setExercises(next)
     const payload: TemplateExerciseInput[] = next.map((e) => ({
@@ -36,6 +35,10 @@ export function TemplateEditorPage() {
     updateTemplate.mutate({ exercises: payload })
   }
 
+  const dragReorder = useDragReorder(exercises, (ex) => ex.id, persist)
+
+  if (isLoading || !template) return <LoadingState />
+
   const updateExercise = (index: number, patch: Partial<TemplateExercise>) => {
     const next = exercises.map((e, i) => (i === index ? { ...e, ...patch } : e))
     persist(next)
@@ -45,15 +48,7 @@ export function TemplateEditorPage() {
     persist(exercises.filter((_, i) => i !== index))
   }
 
-  const move = (index: number, dir: -1 | 1) => {
-    const target = index + dir
-    if (target < 0 || target >= exercises.length) return
-    const next = [...exercises]
-    ;[next[index], next[target]] = [next[target], next[index]]
-    persist(next)
-  }
-
-  const addExercise = (exercise: Exercise) => {
+  const addExercise = (exercise: ExerciseTemplate) => {
     persist([
       ...exercises,
       {
@@ -91,55 +86,40 @@ export function TemplateEditorPage() {
 
       <div className="space-y-2">
         {exercises.map((ex, i) => (
-          <Card key={ex.id} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="font-medium">{ex.exercise_name}</p>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => move(i, -1)}
-                  disabled={i === 0}
-                  className="text-muted hover:text-fg disabled:opacity-30"
-                  title="Move up"
-                  aria-label="Move up"
-                >
-                  ↑
-                </button>
-                <button
-                  onClick={() => move(i, 1)}
-                  disabled={i === exercises.length - 1}
-                  className="text-muted hover:text-fg disabled:opacity-30"
-                  title="Move down"
-                  aria-label="Move down"
-                >
-                  ↓
-                </button>
+          <div key={ex.id} ref={dragReorder.getItemRef(ex.id)}>
+            <Card className={`space-y-2 ${dragReorder.isBeingDragged(ex.id) ? 'scale-[1.02] shadow-lg' : ''}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex min-w-0 items-center gap-1">
+                  <DragHandle handleProps={dragReorder.getHandleProps(ex.id)} isDragging={dragReorder.isBeingDragged(ex.id)} />
+                  <p className="min-w-0 truncate font-medium">{ex.exercise_name}</p>
+                </div>
                 <button
                   onClick={() => removeExercise(i)}
                   title={`Remove ${ex.exercise_name} from this template`}
-                  className="ml-2 text-xs text-muted hover:text-danger"
+                  className="ml-2 shrink-0 text-xs text-muted hover:text-danger"
                 >
                   Remove
                 </button>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <LabeledInput
-                label="Sets"
-                value={ex.target_sets?.toString() ?? ''}
-                onCommit={(v) => updateExercise(i, { target_sets: v === '' ? null : Number(v) })}
-              />
-              <LabeledInput
-                label="Reps"
-                value={ex.target_reps ?? ''}
-                onCommit={(v) => updateExercise(i, { target_reps: v || null })}
-              />
-              <LabeledInput
-                label="Weight"
-                value={ex.target_weight?.toString() ?? ''}
-                onCommit={(v) => updateExercise(i, { target_weight: v === '' ? null : Number(v) })}
-              />
-            </div>
-          </Card>
+              <div className="flex gap-2">
+                <LabeledInput
+                  label="Sets"
+                  value={ex.target_sets?.toString() ?? ''}
+                  onCommit={(v) => updateExercise(i, { target_sets: v === '' ? null : Number(v) })}
+                />
+                <LabeledInput
+                  label="Reps"
+                  value={ex.target_reps ?? ''}
+                  onCommit={(v) => updateExercise(i, { target_reps: v || null })}
+                />
+                <LabeledInput
+                  label="Weight"
+                  value={ex.target_weight?.toString() ?? ''}
+                  onCommit={(v) => updateExercise(i, { target_weight: v === '' ? null : Number(v) })}
+                />
+              </div>
+            </Card>
+          </div>
         ))}
       </div>
 

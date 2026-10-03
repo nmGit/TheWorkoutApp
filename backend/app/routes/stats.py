@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.extensions import db
-from app.models.exercise import Exercise
+from app.models.exercise_template import ExerciseTemplate
 from app.models.settings import UserSettings
 from app.services import stats as stats_service
 from app.validation import ApiError
@@ -11,7 +11,7 @@ bp = Blueprint("stats", __name__, url_prefix="/api")
 
 @bp.get("/exercises/<int:exercise_id>/stats")
 def exercise_stats(exercise_id):
-    exercise = db.session.get(Exercise, exercise_id)
+    exercise = db.session.get(ExerciseTemplate, exercise_id)
     if exercise is None:
         raise ApiError("Exercise not found", 404)
 

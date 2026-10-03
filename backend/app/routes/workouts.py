@@ -4,11 +4,12 @@ from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request
 
 from app.extensions import db
-from app.models.exercise import Exercise
+from app.models.exercise_template import ExerciseTemplate
 from app.models.settings import UserSettings
 from app.models.template import WorkoutTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import serialize_set, serialize_workout
+from app.services.dates import local_midnight_utc
 from app.validation import ApiError
 
 bp = Blueprint("workouts", __name__, url_prefix="/api")
@@ -33,10 +34,9 @@ def list_workouts():
     start = request.args.get("start")
     end = request.args.get("end")
     if start:
-        start_dt = datetime.combine(date.fromisoformat(start), datetime.min.time(), tzinfo=timezone.utc)
-        query = query.filter(Workout.started_at >= start_dt)
+        query = query.filter(Workout.started_at >= local_midnight_utc(date.fromisoformat(start)))
     if end:
-        end_dt = datetime.combine(date.fromisoformat(end), datetime.min.time(), tzinfo=timezone.utc) + timedelta(days=1)
+        end_dt = local_midnight_utc(date.fromisoformat(end)) + timedelta(days=1)
         query = query.filter(Workout.started_at < end_dt)
 
     limit = request.args.get("limit", default=50, type=int)
@@ -164,7 +164,7 @@ def add_workout_exercise(workout_id):
         raise ApiError("Workout not found", 404)
     body = request.get_json(force=True) or {}
     exercise_id = body.get("exercise_id")
-    if not exercise_id or db.session.get(Exercise, exercise_id) is None:
+    if not exercise_id or db.session.get(ExerciseTemplate, exercise_id) is None:
         raise ApiError("Unknown exercise_id", 404)
 
     next_position = len(workout.exercises)
@@ -172,6 +172,32 @@ def add_workout_exercise(workout_id):
     db.session.add(we)
     db.session.commit()
     return jsonify(serialize_workout(workout)), 201
+
+
+@bp.patch("/workouts/<int:workout_id>/exercises/reorder")
+def reorder_workout_exercises(workout_id):
+    workout = db.session.get(Workout, workout_id)
+    if workout is None:
+        raise ApiError("Workout not found", 404)
+
+    body = request.get_json(silent=True)
+    ids = body.get("exercise_ids") if isinstance(body, dict) else None
+    if not isinstance(ids, list) or not all(
+        isinstance(i, int) and not isinstance(i, bool) for i in ids
+    ):
+        raise ApiError("exercise_ids must be a list of ints", 400)
+    if len(set(ids)) != len(ids):
+        raise ApiError("exercise_ids contains duplicates", 400)
+
+    by_id = {we.id: we for we in workout.exercises}
+    if set(ids) != set(by_id.keys()):
+        raise ApiError("exercise_ids must match this workout's exercises exactly", 400)
+
+    for position, we_id in enumerate(ids):
+        by_id[we_id].position = position
+
+    db.session.commit()
+    return jsonify(serialize_workout(workout))
 
 
 @bp.delete("/workouts/<int:workout_id>/exercises/<int:workout_exercise_id>")
@@ -206,6 +232,10 @@ def add_set(workout_exercise_id):
         distance_meters=body.get(
             "distance_meters", previous.distance_meters if previous else None
         ),
+        # Deliberately not copied from the previous set (unlike weight): an
+        # empty rest field shows ghost text derived from the sets before it,
+        # so a later change to one set's rest carries to the sets after it.
+        rest_seconds=body.get("rest_seconds"),
         completed=body.get("completed", False),
     )
     db.session.add(new_set)
@@ -226,6 +256,7 @@ def update_set(set_id):
         "reps",
         "duration_seconds",
         "distance_meters",
+        "rest_seconds",
         "is_warmup",
         "is_dropset",
         "rpe",

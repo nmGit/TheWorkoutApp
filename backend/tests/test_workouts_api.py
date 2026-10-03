@@ -1,5 +1,8 @@
 from datetime import date, timedelta
 
+from app.extensions import db
+from app.models.exercise_template import ExerciseTemplate
+
 
 def test_start_and_finish_blank_workout(client, bench_press):
     resp = client.post("/api/workouts", json={})
@@ -145,6 +148,51 @@ def test_delete_template_keeps_workout_history(client, bench_press):
     assert resp.get_json()["template_id"] is None
 
 
+def test_new_sets_do_not_copy_rest_seconds(client, bench_press):
+    # Unlike weight, a new set's rest starts empty: the UI shows ghost text
+    # derived from the sets before it (and last time), so editing one set's
+    # rest carries forward to the sets after it instead of each new set
+    # freezing its own copy.
+    workout = client.post("/api/workouts", json={}).get_json()
+    we = client.post(
+        f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": bench_press.id}
+    ).get_json()["exercises"][0]
+
+    first = client.post(
+        f"/api/workout-exercises/{we['id']}/sets", json={"weight": 135, "reps": 5, "rest_seconds": 90}
+    ).get_json()
+    assert first["rest_seconds"] == 90                      # explicit values are stored
+
+    second = client.post(f"/api/workout-exercises/{we['id']}/sets", json={}).get_json()
+    assert second["weight"] == 135 and second["rest_seconds"] is None
+
+    resp = client.patch(f"/api/sets/{second['id']}", json={"rest_seconds": 120, "completed": True})
+    assert resp.get_json()["rest_seconds"] == 120 and resp.get_json()["completed"] is True
+    cleared = client.patch(f"/api/sets/{second['id']}", json={"rest_seconds": None}).get_json()
+    assert cleared["rest_seconds"] is None
+
+
+def test_set_can_be_marked_as_dropset_or_warmup_but_not_both(client, bench_press):
+    # The set row's "..." menu sends both flags in one PATCH so a set is a
+    # warmup, a drop set, or neither -- the API just stores what it's given.
+    workout = client.post("/api/workouts", json={}).get_json()
+    we = client.post(
+        f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": bench_press.id}
+    ).get_json()["exercises"][0]
+    set_id = client.post(f"/api/workout-exercises/{we['id']}/sets", json={"weight": 100, "reps": 5}).get_json()["id"]
+
+    marked = client.patch(f"/api/sets/{set_id}", json={"is_dropset": True, "is_warmup": False}).get_json()
+    assert (marked["is_dropset"], marked["is_warmup"]) == (True, False)
+
+    swapped = client.patch(f"/api/sets/{set_id}", json={"is_warmup": True, "is_dropset": False}).get_json()
+    assert (swapped["is_dropset"], swapped["is_warmup"]) == (False, True)
+
+    # A new set copied from a drop set is a regular set, not another drop set.
+    client.patch(f"/api/sets/{set_id}", json={"is_dropset": True, "is_warmup": False})
+    copy = client.post(f"/api/workout-exercises/{we['id']}/sets", json={}).get_json()
+    assert copy["is_dropset"] is False
+
+
 def test_cannot_delete_exercise_with_history(client, bench_press):
     workout = client.post("/api/workouts", json={}).get_json()
     we = client.post(
@@ -153,5 +201,134 @@ def test_cannot_delete_exercise_with_history(client, bench_press):
     client.post(f"/api/workout-exercises/{we['id']}/sets", json={"weight": 100, "reps": 5, "completed": True})
     client.patch(f"/api/workouts/{workout['id']}", json={"finish": True})
 
-    resp = client.delete(f"/api/exercises/{bench_press.id}")
+    resp = client.delete(f"/api/exercise-templates/{bench_press.id}")
     assert resp.status_code == 409
+
+
+def _make_exercise(app, name, muscle_group_id):
+    # No `with app.app_context():` here -- the `app` fixture already keeps
+    # one open for the whole test (see conftest.py's `bench_press`, which
+    # relies on the same thing). Opening a second, nested context here would
+    # tear down the scoped session on exit and detach this row before the
+    # caller ever reads `.id` from it.
+    exercise = ExerciseTemplate(
+        name=name,
+        muscle_group_id=muscle_group_id,
+        equipment="barbell",
+        tracking_type="weight_reps",
+        is_custom=False,
+    )
+    db.session.add(exercise)
+    db.session.commit()
+    return exercise
+
+
+def test_reorder_workout_exercises(client, app, bench_press, chest_group):
+    # Squat sits in the middle and carries a real completed set -- reordering
+    # must move it (and its history) intact, unlike the template editor's
+    # full-replace approach, which would churn WorkoutExercise ids and
+    # cascade-delete any nested WorkoutSet rows if applied here.
+    squat = _make_exercise(app, "Squat", chest_group.id)
+    deadlift = _make_exercise(app, "Deadlift", chest_group.id)
+
+    workout = client.post("/api/workouts", json={}).get_json()
+    we_bench = client.post(
+        f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": bench_press.id}
+    ).get_json()["exercises"][0]
+    we_squat = client.post(
+        f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": squat.id}
+    ).get_json()["exercises"][1]
+    we_deadlift = client.post(
+        f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": deadlift.id}
+    ).get_json()["exercises"][2]
+
+    set_resp = client.post(
+        f"/api/workout-exercises/{we_squat['id']}/sets",
+        json={"weight": 225, "reps": 5, "completed": True},
+    ).get_json()
+
+    new_order = [we_deadlift["id"], we_bench["id"], we_squat["id"]]
+    resp = client.patch(
+        f"/api/workouts/{workout['id']}/exercises/reorder", json={"exercise_ids": new_order}
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert [e["id"] for e in body["exercises"]] == new_order
+    assert [e["exercise_name"] for e in body["exercises"]] == ["Deadlift", "Bench Press", "Squat"]
+
+    refetched = client.get(f"/api/workouts/{workout['id']}").get_json()
+    assert [e["id"] for e in refetched["exercises"]] == new_order
+
+    squat_after = next(e for e in refetched["exercises"] if e["id"] == we_squat["id"])
+    assert squat_after["id"] == we_squat["id"]
+    assert len(squat_after["sets"]) == 1
+    assert squat_after["sets"][0]["id"] == set_resp["id"]
+    assert squat_after["sets"][0]["weight"] == 225.0
+    assert squat_after["sets"][0]["reps"] == 5
+
+
+def _start_workout_with_three_exercises(client, bench_press, squat, deadlift):
+    workout = client.post("/api/workouts", json={}).get_json()
+    ids = []
+    for exercise in (bench_press, squat, deadlift):
+        we = client.post(
+            f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": exercise.id}
+        ).get_json()["exercises"][-1]
+        ids.append(we["id"])
+    return workout, ids
+
+
+def test_reorder_workout_exercises_rejects_missing_id(client, app, bench_press, chest_group):
+    squat = _make_exercise(app, "Squat", chest_group.id)
+    deadlift = _make_exercise(app, "Deadlift", chest_group.id)
+    workout, ids = _start_workout_with_three_exercises(client, bench_press, squat, deadlift)
+
+    resp = client.patch(
+        f"/api/workouts/{workout['id']}/exercises/reorder", json={"exercise_ids": ids[:2]}
+    )
+    assert resp.status_code == 400
+
+    refetched = client.get(f"/api/workouts/{workout['id']}").get_json()
+    assert [e["id"] for e in refetched["exercises"]] == ids
+
+
+def test_reorder_workout_exercises_rejects_foreign_id(client, app, bench_press, chest_group):
+    squat = _make_exercise(app, "Squat", chest_group.id)
+    deadlift = _make_exercise(app, "Deadlift", chest_group.id)
+    workout_a, ids_a = _start_workout_with_three_exercises(client, bench_press, squat, deadlift)
+    client.patch(f"/api/workouts/{workout_a['id']}", json={"finish": True})
+
+    workout_b, ids_b = _start_workout_with_three_exercises(client, bench_press, squat, deadlift)
+    bad_order = [ids_a[0], ids_b[1], ids_b[2]]
+    resp = client.patch(
+        f"/api/workouts/{workout_b['id']}/exercises/reorder", json={"exercise_ids": bad_order}
+    )
+    assert resp.status_code == 400
+
+    refetched = client.get(f"/api/workouts/{workout_b['id']}").get_json()
+    assert [e["id"] for e in refetched["exercises"]] == ids_b
+
+
+def test_reorder_workout_exercises_rejects_duplicate_id(client, app, bench_press, chest_group):
+    squat = _make_exercise(app, "Squat", chest_group.id)
+    deadlift = _make_exercise(app, "Deadlift", chest_group.id)
+    workout, ids = _start_workout_with_three_exercises(client, bench_press, squat, deadlift)
+
+    resp = client.patch(
+        f"/api/workouts/{workout['id']}/exercises/reorder",
+        json={"exercise_ids": [ids[0], ids[0], ids[2]]},
+    )
+    assert resp.status_code == 400
+
+    refetched = client.get(f"/api/workouts/{workout['id']}").get_json()
+    assert [e["id"] for e in refetched["exercises"]] == ids
+
+
+def test_reorder_workout_exercises_rejects_malformed_body(client, bench_press):
+    workout = client.post("/api/workouts", json={}).get_json()
+    client.post(f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": bench_press.id})
+
+    resp = client.patch(
+        f"/api/workouts/{workout['id']}/exercises/reorder", json={"exercise_ids": "nope"}
+    )
+    assert resp.status_code == 400

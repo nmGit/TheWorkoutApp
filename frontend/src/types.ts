@@ -22,38 +22,49 @@ export interface LastPerformed {
   summary: string
 }
 
-export interface ExerciseTemplateSummary {
-  id: number
-  instructions: string | null
-  instruction_steps: string[]
+/** A muscle as its source dataset names it, plus a highlighted-body diagram
+ * when RepDB happens to have one under the same name. */
+export interface MuscleSwatch {
+  name: string
   image_url: string | null
-  attribution: string | null
-  is_custom: boolean
 }
 
-export interface ExerciseTemplate extends ExerciseTemplateSummary {
+/** An exercise, the abstract idea of it -- name, muscle group, equipment,
+ * tracking type, description/instructions/notes. Dataset-sourced templates
+ * (`is_custom: false`) additionally carry image/instructions metadata;
+ * custom ones (`is_custom: true`) don't, since that's the only real
+ * difference between the two. There is no separate per-user "Exercise"
+ * entity -- a workout's logged sets and a saved routine's slots link
+ * straight to this. */
+export interface ExerciseTemplate {
+  id: number
   external_id: string | null
   name: string
   category: string | null
   body_part: string | null
-  equipment: string | null
+  /** This app's own fixed equipment vocabulary, used for filtering. */
+  equipment: Equipment | null
+  /** The dataset's original equipment wording, kept for display only. */
+  equipment_raw: string | null
   target_muscle: string | null
   muscle_group: string | null
-  secondary_muscles: string[]
-}
-
-export interface Exercise {
-  id: number
-  name: string
-  muscle_group_id: number
+  muscle_group_id: number | null
   muscle_group_name: string | null
-  equipment: Equipment
-  tracking_type: TrackingType
-  is_custom: boolean
-  default_rest_seconds: number | null
+  tracking_type: TrackingType | null
+  primary_muscles: MuscleSwatch[]
+  secondary_muscles: MuscleSwatch[]
+  instructions: string | null
+  instruction_steps: string[]
+  tips: string[]
+  difficulty: string | null
+  mechanic: string | null
+  /** First image, for thumbnails. */
+  image_url: string | null
+  /** All images: two poses (start, peak) where RepDB covers the exercise, else at most one. */
+  image_urls: string[]
+  attribution: string | null
   notes: string | null
-  template_id: number | null
-  template: ExerciseTemplateSummary | null
+  is_custom: boolean
   last_performed?: LastPerformed | null
 }
 
@@ -65,6 +76,7 @@ export interface WorkoutSet {
   reps: number | null
   duration_seconds: number | null
   distance_meters: number | null
+  rest_seconds: number | null
   is_warmup: boolean
   is_dropset: boolean
   rpe: number | null

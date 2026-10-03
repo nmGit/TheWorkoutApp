@@ -12,15 +12,21 @@ the source of truth for intended behavior.
 - **Frontend**: React + Vite + TypeScript, Tailwind CSS, TanStack Query, Recharts, React Router
 - **Backend**: Flask + SQLAlchemy + Alembic (Flask-Migrate), served by Waitress in production
 - **Database**: SQLite by default (`data/workout.db`), Postgres-compatible via `DATABASE_URL`
-- **Exercise templates**: sourced from the [exercises-dataset](https://github.com/hasaneyldrm/exercises-dataset)
-  submodule at `external/exercises-dataset` (data/instructions MIT-licensed;
-  exercise images © Gym visual, redistributed with permission — keep the
-  `© Gym visual — https://gymvisual.com/` attribution intact wherever they're shown)
+- **Exercises**: the catalog combines two datasets, both git submodules (nothing from
+  them is committed here):
+  [RepDB](https://repdb.co) at `external/repdb-exercise-dataset` — illustrations,
+  instructions, tips and muscle diagrams (free tier; **Exercise data by
+  [RepDB (repdb.co)](https://repdb.co)**, attribution required by its license) —
+  and the original [exercises-dataset](https://github.com/hasaneyldrm/exercises-dataset)
+  at `external/exercises-dataset` (data/instructions MIT-licensed; images © Gym visual —
+  keep the `© Gym visual — https://gymvisual.com/` attribution intact wherever they're
+  shown). RepDB's content is used wherever it covers an exercise; the original is the
+  fallback everywhere else.
 
 ## First-time setup
 
 ```bash
-# Clone with the exercises-dataset submodule (or run
+# Clone with both exercise-dataset submodules (or run
 # `git submodule update --init --recursive` after a plain clone)
 git clone --recurse-submodules <this-repo-url>
 
@@ -31,12 +37,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 export FLASK_APP=wsgi.py
 flask db upgrade                            # creates data/workout.db
-python3 scripts/seed_exercises.py           # seeds muscle groups + exercise library
-python3 scripts/seed_exercise_templates.py  # seeds exercise templates from external/exercises-dataset
-
-# Optional: import legacy workout history from a .ods spreadsheet
-pip install -r scripts/requirements.txt
-python3 scripts/import_ods.py /path/to/Weightlifting.ods
+python3 scripts/seed_exercise_templates.py  # seeds muscle groups + the exercise catalog from external/*-dataset
+                                            # (add --dry-run first to see what it would do; safe to re-run)
 
 # Frontend
 cd ../frontend

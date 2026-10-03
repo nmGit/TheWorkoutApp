@@ -20,9 +20,14 @@ class Config:
         os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist")),
     )
 
-    # Bundled exercises-dataset submodule (external/exercises-dataset), the
-    # source of built-in exercise templates and their images.
-    EXERCISE_DATASET_DIR = os.environ.get(
-        "EXERCISE_DATASET_DIR",
-        os.path.abspath(os.path.join(BASE_DIR, "..", "external", "exercises-dataset")),
+    # The two bundled exercise datasets, both git submodules at fixed
+    # locations in this repo (so plain constants, not environment variables;
+    # tests override them via a Config subclass). The "legacy" dataset is
+    # hasaneyldrm/exercises-dataset; RepDB is the newer, preferred source for
+    # images/text/muscles wherever it covers an exercise.
+    EXERCISE_DATASET_DIR = os.path.abspath(
+        os.path.join(BASE_DIR, "..", "external", "exercises-dataset")
+    )
+    REPDB_DATASET_DIR = os.path.abspath(
+        os.path.join(BASE_DIR, "..", "external", "repdb-exercise-dataset")
     )

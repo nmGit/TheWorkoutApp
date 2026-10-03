@@ -16,14 +16,15 @@ import csv
 import os
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app
 from app.extensions import db
-from app.models.exercise import Exercise
+from app.models.exercise_template import ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
+from app.services.dates import local_date, to_utc
 from scripts.ods_parser import EQUIPMENT_ALIASES
 
 NON_SET_ORDERS = {"Rest Timer", "Note"}
@@ -59,11 +60,12 @@ def group_by_workout(rows: list[dict]) -> dict[str, list[dict]]:
     return grouped
 
 
-def resolve_exercise(name: str, cache: dict) -> Exercise:
-    """Match a Strong exercise name to an existing Exercise row.
+def resolve_exercise(name: str, cache: dict) -> ExerciseTemplate:
+    """Match a Strong exercise name to an existing ExerciseTemplate row.
 
-    Match order: exact name -> normalized base name (equipment reconciled to
-    Strong's value, since it's the more precisely user-confirmed source).
+    Match order: exact name -> alias (a name the exercise is also known by)
+    -> normalized base name (equipment reconciled to Strong's value, since
+    it's the more precisely user-confirmed source).
     An exercise Strong knows about that we've never seen before isn't
     auto-created -- it's added to scripts/seed_data/exercises.json by hand
     first (see docs/data_migration.rst "Ongoing updates"), the same
@@ -72,13 +74,25 @@ def resolve_exercise(name: str, cache: dict) -> Exercise:
     if name in cache:
         return cache[name]
 
-    exact = Exercise.query.filter(db.func.lower(Exercise.name) == name.lower()).first()
+    exact = ExerciseTemplate.query.filter(
+        db.func.lower(ExerciseTemplate.name) == name.lower()
+    ).first()
     if exact:
         cache[name] = exact
         return exact
 
+    # An exercise that was merged into another (or is otherwise known by a
+    # second name) lists the other names as aliases -- see
+    # ExerciseTemplate.aliases.
+    templates = ExerciseTemplate.query.all()
+    lowered = name.lower()
+    for template in templates:
+        if any(alias.lower() == lowered for alias in (template.aliases or [])):
+            cache[name] = template
+            return template
+
     norm = normalize(name)
-    candidates = [e for e in Exercise.query.all() if normalize(e.name) == norm]
+    candidates = [e for e in templates if normalize(e.name) == norm]
     strong_equip = parse_equipment_suffix(name)
     if len(candidates) == 1:
         match = candidates[0]
@@ -92,7 +106,7 @@ def resolve_exercise(name: str, cache: dict) -> Exercise:
 
     raise LookupError(
         f"No existing exercise matches {name!r} (normalized: {norm!r}). "
-        f"Add it to scripts/seed_data/exercises.json and re-run scripts/seed_exercises.py first."
+        f"Add it to scripts/seed_data/exercises.json and re-run scripts/seed_exercise_templates.py first."
     )
 
 
@@ -111,21 +125,23 @@ def import_workouts(path: str) -> None:
     grouped = group_by_workout(rows)
 
     existing_dates = {
-        w.started_at.date().isoformat()
+        local_date(w.started_at).isoformat()
         for w in Workout.query.filter(Workout.completed_at.isnot(None)).all()
     }
 
-    exercise_cache: dict[str, Exercise] = {}
+    exercise_cache: dict[str, ExerciseTemplate] = {}
     imported = 0
     skipped = 0
     sets_created = 0
 
     for workout_num in sorted(grouped, key=int):
         workout_rows = grouped[workout_num]
-        started_at = datetime.strptime(workout_rows[0]["Date"], "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=timezone.utc
-        )
-        if started_at.date().isoformat() in existing_dates:
+        # Strong exports timestamps in the device's local wall-clock time
+        # (this app's server timezone, for a self-hosted single-user app --
+        # see app/services/dates.py), not UTC, so this must be properly
+        # converted rather than just labelled UTC.
+        started_at = to_utc(datetime.strptime(workout_rows[0]["Date"], "%Y-%m-%d %H:%M:%S"))
+        if local_date(started_at).isoformat() in existing_dates:
             skipped += 1
             continue
 
@@ -184,7 +200,7 @@ def import_workouts(path: str) -> None:
                 sets_created += 1
 
         imported += 1
-        print(f"  Imported {started_at.date()} — {workout.name!r} ({len(exercises_in_order)} exercises)")
+        print(f"  Imported {local_date(started_at)} — {workout.name!r} ({len(exercises_in_order)} exercises)")
 
     db.session.commit()
     print(f"\nImported {imported} new workout(s), {sets_created} set(s). "

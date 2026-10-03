@@ -7,17 +7,20 @@ import {
   useDeleteSet,
   useDeleteWorkout,
   useRemoveWorkoutExercise,
+  useReorderWorkoutExercises,
   useUpdateSet,
   useUpdateWorkout,
 } from '../api/workouts'
-import { useExercise, useExerciseHistory } from '../api/exercises'
+import { useExerciseHistory } from '../api/exerciseTemplates'
+import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
 import { ExercisePicker } from '../components/ExercisePicker'
 import { SetRow } from '../components/SetRow'
-import { Button, Card, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
+import { Button, Card, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { useGlobalRestTimer } from '../context/RestTimerContext'
-import { formatElapsed, setSummary } from '../lib/format'
-import type { Exercise, Workout, WorkoutExercise, WorkoutSet } from '../types'
+import { useDragReorder } from '../hooks/useDragReorder'
+import { formatElapsed } from '../lib/format'
+import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
 
 export function ActiveWorkoutPage() {
   const navigate = useNavigate()
@@ -33,7 +36,16 @@ export function ActiveWorkoutPage() {
   const updateWorkout = useUpdateWorkout(workout?.id ?? -1)
   const deleteWorkout = useDeleteWorkout()
   const addExercise = useAddWorkoutExercise(workout?.id ?? -1)
+  const reorderExercises = useReorderWorkoutExercises(workout?.id ?? -1)
+  const { data: template } = useTemplate(workout?.template_id ?? undefined)
+  const updateTemplate = useUpdateTemplate(workout?.template_id ?? -1)
   const timer = useGlobalRestTimer()
+
+  const dragReorder = useDragReorder(
+    workout?.exercises ?? [],
+    (we) => we.id,
+    (newOrder) => reorderExercises.mutate(newOrder.map((we) => we.id)),
+  )
 
   if (isLoading) return <LoadingState />
 
@@ -52,6 +64,36 @@ export function ActiveWorkoutPage() {
   }
 
   const handleFinish = async () => {
+    // Offer to propagate a reordering back to the source template -- but
+    // only when the workout still has exactly the template's exercises,
+    // just in a different order. If exercises were also added/removed
+    // relative to the template, that's a different (and more ambiguous)
+    // kind of drift than "reordered", so it's left alone rather than
+    // guessing at merging membership too.
+    if (template && workout.template_id) {
+      const workoutOrder = workout.exercises.map((we) => we.exercise_id)
+      const templateOrder = template.exercises.map((te) => te.exercise_id)
+      const sameSet = [...workoutOrder].sort().join(',') === [...templateOrder].sort().join(',')
+      const sameOrder = workoutOrder.join(',') === templateOrder.join(',')
+      if (sameSet && !sameOrder) {
+        const propagate = confirm(
+          `Apply this exercise order to "${template.name}" too? Choose Cancel to keep it just for this workout.`,
+        )
+        if (propagate) {
+          const reordered: TemplateExerciseInput[] = workoutOrder.map((exerciseId) => {
+            const te = template.exercises.find((t) => t.exercise_id === exerciseId)!
+            return {
+              exercise_id: te.exercise_id,
+              target_sets: te.target_sets,
+              target_reps: te.target_reps,
+              target_weight: te.target_weight,
+            }
+          })
+          await updateTemplate.mutateAsync({ exercises: reordered })
+        }
+      }
+    }
+
     await updateWorkout.mutateAsync({ finish: true })
     timer.clear()
     navigate(`/history/${workout.id}`)
@@ -98,7 +140,14 @@ export function ActiveWorkoutPage() {
 
       <div className="space-y-3">
         {workout.exercises.map((we) => (
-          <ExerciseBlock key={we.id} workout={workout} workoutExercise={we} />
+          <div key={we.id} ref={dragReorder.getItemRef(we.id)}>
+            <ExerciseBlock
+              workout={workout}
+              workoutExercise={we}
+              handleProps={dragReorder.getHandleProps(we.id)}
+              isDragging={dragReorder.isBeingDragged(we.id)}
+            />
+          </div>
         ))}
       </div>
 
@@ -114,7 +163,7 @@ export function ActiveWorkoutPage() {
       {pickerOpen && (
         <ExercisePicker
           onClose={() => setPickerOpen(false)}
-          onSelect={async (exercise: Exercise) => {
+          onSelect={async (exercise: ExerciseTemplate) => {
             await addExercise.mutateAsync(exercise.id)
             setPickerOpen(false)
           }}
@@ -137,7 +186,33 @@ function NameEditor({ workout, onSave }: { workout: Workout; onSave: (name: stri
   )
 }
 
-function ExerciseBlock({ workout, workoutExercise }: { workout: Workout; workoutExercise: WorkoutExercise }) {
+/** The ghost text for a set's rest field: the rest of the nearest earlier set
+ * in this exercise (so changing one set's rest changes the suggestion for
+ * every set after it), else what was used for this set position last time,
+ * else the last rest used last time, else the app-wide default. */
+function restGhostSeconds(sets: WorkoutSet[], index: number, previousSets: WorkoutSet[], fallback: number): number {
+  for (let j = index - 1; j >= 0; j--) {
+    if (sets[j].rest_seconds !== null) return sets[j].rest_seconds as number
+  }
+  const lastTime = previousSets[index]?.rest_seconds
+  if (lastTime != null) return lastTime
+  for (let j = previousSets.length - 1; j >= 0; j--) {
+    if (previousSets[j].rest_seconds !== null) return previousSets[j].rest_seconds as number
+  }
+  return fallback
+}
+
+function ExerciseBlock({
+  workout,
+  workoutExercise,
+  handleProps,
+  isDragging,
+}: {
+  workout: Workout
+  workoutExercise: WorkoutExercise
+  handleProps: Record<string, unknown>
+  isDragging: boolean
+}) {
   const settings = useAppSettings()
   const timer = useGlobalRestTimer()
   const addSet = useAddSet(workout.id)
@@ -145,24 +220,47 @@ function ExerciseBlock({ workout, workoutExercise }: { workout: Workout; workout
   const deleteSet = useDeleteSet(workout.id)
   const removeExercise = useRemoveWorkoutExercise(workout.id)
   const { data: history } = useExerciseHistory(workoutExercise.exercise_id)
-  const { data: exercise } = useExercise(workoutExercise.exercise_id)
 
   const previousSets: WorkoutSet[] = history?.items.find((item) => item.workout_id !== workout.id)?.sets ?? []
   const trackingType = workoutExercise.tracking_type ?? 'weight_reps'
 
-  const handleToggleComplete = (set: WorkoutSet) => {
+  const restGhost = (index: number) =>
+    restGhostSeconds(workoutExercise.sets, index, previousSets, settings.default_rest_seconds)
+
+  const handleToggleComplete = (set: WorkoutSet, index: number) => {
     const nextCompleted = !set.completed
-    updateSet.mutate({ setId: set.id, data: { completed: nextCompleted } })
-    if (nextCompleted) {
-      const restSeconds = exercise?.default_rest_seconds ?? settings.default_rest_seconds
-      timer.start(restSeconds)
+    if (!nextCompleted) {
+      updateSet.mutate({ setId: set.id, data: { completed: false } })
+      return
+    }
+    // The rest is the set's own value if it has one, else its ghost value.
+    // Completing the set saves that value into the set so the box fills in
+    // (and later sets' ghost text follows it).
+    const restSeconds = set.rest_seconds ?? restGhost(index)
+    updateSet.mutate({
+      setId: set.id,
+      data: set.rest_seconds === null ? { completed: true, rest_seconds: restSeconds } : { completed: true },
+    })
+    timer.start(restSeconds, set.id)
+  }
+
+  const handleChange = (set: WorkoutSet, index: number, patch: Partial<WorkoutSet>) => {
+    updateSet.mutate({ setId: set.id, data: patch })
+    // Changing the rest of the set whose timer is running re-targets that
+    // timer, keeping the time already elapsed. Clearing the field falls
+    // back to the ghost value.
+    if ('rest_seconds' in patch && timer.isRunning && timer.setId === set.id) {
+      timer.setDuration(patch.rest_seconds ?? restGhost(index))
     }
   }
 
   return (
-    <Card>
+    <Card className={isDragging ? 'scale-[1.02] shadow-lg' : ''}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="min-w-0 truncate font-semibold">{workoutExercise.exercise_name}</h3>
+        <div className="flex min-w-0 items-center gap-1">
+          <DragHandle handleProps={handleProps} isDragging={isDragging} />
+          <h3 className="min-w-0 truncate font-semibold">{workoutExercise.exercise_name}</h3>
+        </div>
         <div className="flex shrink-0 items-center gap-1">
           <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
           <button
@@ -183,9 +281,10 @@ function ExerciseBlock({ workout, workoutExercise }: { workout: Workout; workout
             index={i}
             trackingType={trackingType}
             weightUnit={settings.weight_unit}
-            previousLabel={previousSets[i] ? setSummary(previousSets[i], settings.weight_unit) : undefined}
-            onChange={(patch) => updateSet.mutate({ setId: set.id, data: patch })}
-            onToggleComplete={() => handleToggleComplete(set)}
+            previousSet={previousSets[i]}
+            restGhostSeconds={restGhost(i)}
+            onChange={(patch) => handleChange(set, i, patch)}
+            onToggleComplete={() => handleToggleComplete(set, i)}
             onDelete={() => deleteSet.mutate(set.id)}
           />
         ))}

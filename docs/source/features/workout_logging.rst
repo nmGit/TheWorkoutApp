@@ -37,8 +37,12 @@ Layout, top to bottom, matching Strong's proven structure:
      as greyed-out placeholder text (e.g. *"135 × 8"* from the last time
      this exercise was logged), weight input, reps input, a checkmark to
      mark the set ``completed``.
-   - Warmup and drop-set toggles per set (small inline badges, not
-     separate buttons, to keep the row compact).
+   - Warmup and drop-set toggles per set, in the row's "..." menu ("Mark
+     as warmup" / "Mark as drop set", tucked away to keep the row compact on
+     a phone). A marked set shows a small ``W`` or ``D`` badge under its set
+     number. The two are mutually exclusive — marking one clears the other —
+     and "+ Add set" never copies the flag, so a set added after a drop set
+     is a regular set.
    - "+ Add set" appends a set, pre-filled by copying the previous set's
      values (fast repeat-set entry, the single most common action in a
      workout).
@@ -54,8 +58,8 @@ Layout, top to bottom, matching Strong's proven structure:
 Marking a set's checkmark (``completed: true``) is the single action that:
 
 - Persists the set via ``PATCH /api/sets/:id``.
-- Starts the rest timer (see :doc:`rest_timers`), using the exercise's
-  (or global default) rest duration.
+- Starts the rest timer (see :doc:`rest_timers`) from that set's rest
+  field — or its ghost text if it's empty, which then fills the field in.
 - Advances focus to the next set's weight input, or reveals "+ Add set" if
   it was the last one.
 

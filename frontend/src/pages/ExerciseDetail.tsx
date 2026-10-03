@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useExercise, useExerciseHistory, useUpdateExercise } from '../api/exercises'
+import { useExerciseHistory, useExerciseTemplate } from '../api/exerciseTemplates'
 import { useExerciseStats } from '../api/stats'
+import { PoseImages } from '../components/PoseImages'
 import { ProgressChart } from '../components/ProgressChart'
-import { Card, LoadingState, PageTitle } from '../components/ui'
+import { Badge, Card, LoadingState, PageTitle } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { formatDate, formatDuration, formatWeight, setSummary } from '../lib/format'
+import type { MuscleSwatch } from '../types'
 
 const METRIC_LABELS: Record<string, string> = {
   max_weight: 'Max weight',
@@ -22,9 +24,8 @@ export function ExerciseDetailPage() {
   const { id } = useParams()
   const exerciseId = Number(id)
   const settings = useAppSettings()
-  const { data: exercise } = useExercise(exerciseId)
+  const { data: exercise } = useExerciseTemplate(exerciseId)
   const { data: history } = useExerciseHistory(exerciseId)
-  const updateExercise = useUpdateExercise(exerciseId)
 
   const defaultMetric = exercise?.tracking_type === 'cardio' ? 'distance' : 'est_1rm'
   const [metric, setMetric] = useState<string | undefined>(undefined)
@@ -40,36 +41,56 @@ export function ExerciseDetailPage() {
   return (
     <div className="space-y-4">
       <PageTitle>{exercise.name}</PageTitle>
-      <p className="-mt-3 text-sm text-muted">
-        {exercise.muscle_group_name} · {exercise.equipment}
-      </p>
+      <div className="-mt-3 flex flex-wrap items-center gap-1.5 text-sm text-muted">
+        <span>
+          {exercise.muscle_group_name} · {exercise.equipment}
+        </span>
+        {exercise.mechanic && <Badge>{exercise.mechanic}</Badge>}
+        {exercise.difficulty && <Badge>{exercise.difficulty}</Badge>}
+      </div>
 
-      {exercise.template && (exercise.template.image_url || exercise.template.instruction_steps.length > 0) && (
+      {(exercise.image_urls.length > 0 || exercise.instruction_steps.length > 0) && (
         <Card className="space-y-3">
-          {exercise.template.image_url && (
+          {exercise.image_urls.length > 0 && (
             <div>
-              <img
-                src={exercise.template.image_url}
-                alt={exercise.name}
-                className="mx-auto h-40 w-40 rounded-lg bg-border/40 object-cover"
-              />
-              {exercise.template.attribution && (
-                <p className="mt-1 text-center text-[11px] text-muted">{exercise.template.attribution}</p>
+              <PoseImages urls={exercise.image_urls} alt={exercise.name} />
+              {exercise.attribution && (
+                <p className="mt-1 text-center text-[11px] text-muted">
+                  <Attribution text={exercise.attribution} />
+                </p>
               )}
             </div>
           )}
-          {exercise.template.instruction_steps.length > 0 && (
+          {exercise.instruction_steps.length > 0 && (
             <div>
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
                 How to perform it
               </h2>
               <ol className="list-decimal space-y-1.5 pl-5 text-sm">
-                {exercise.template.instruction_steps.map((step, i) => (
+                {exercise.instruction_steps.map((step, i) => (
                   <li key={i}>{step}</li>
                 ))}
               </ol>
             </div>
           )}
+          {exercise.tips.length > 0 && (
+            <div>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Tips</h2>
+              <ul className="list-disc space-y-1 pl-5 text-sm">
+                {exercise.tips.map((tip, i) => (
+                  <li key={i}>{tip}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {(exercise.primary_muscles.length > 0 || exercise.secondary_muscles.length > 0) && (
+        <Card className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Muscles worked</h2>
+          <MuscleRow label="Primary" muscles={exercise.primary_muscles} primary />
+          <MuscleRow label="Secondary" muscles={exercise.secondary_muscles} />
         </Card>
       )}
 
@@ -107,21 +128,6 @@ export function ExerciseDetailPage() {
         </div>
       )}
 
-      <Card>
-        <label className="text-xs text-muted">Default rest timer (seconds)</label>
-        <input
-          type="number"
-          defaultValue={exercise.default_rest_seconds ?? ''}
-          placeholder={`${settings.default_rest_seconds} (global default)`}
-          onBlur={(e) =>
-            updateExercise.mutate({
-              default_rest_seconds: e.target.value === '' ? null : Number(e.target.value),
-            })
-          }
-          className="mt-1 h-10 w-full rounded-md border border-border bg-bg px-2 text-sm"
-        />
-      </Card>
-
       <div>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">History</h2>
         <div className="space-y-2">
@@ -141,5 +147,65 @@ export function ExerciseDetailPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function MuscleRow({ label, muscles, primary = false }: { label: string; muscles: MuscleSwatch[]; primary?: boolean }) {
+  if (muscles.length === 0) return null
+  const withImage = muscles.filter((m) => m.image_url)
+  const textOnly = muscles.filter((m) => !m.image_url)
+  return (
+    <div>
+      <p className="mb-1.5 text-xs text-muted">{label}</p>
+      {withImage.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {withImage.map((m) => (
+            <div key={m.name} className="flex w-24 flex-col items-center gap-1">
+              <img
+                src={m.image_url!}
+                alt={`${m.name} highlighted on a body diagram`}
+                className={`h-24 w-24 rounded-xl bg-border/30 object-contain p-1 ring-2 ${
+                  primary ? 'ring-accent/70' : 'ring-transparent'
+                }`}
+              />
+              <span className={`text-center text-xs font-medium leading-tight ${primary ? 'text-accent' : 'text-muted'}`}>
+                {m.name}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {textOnly.length > 0 && (
+        <div className={`flex flex-wrap gap-1.5 ${withImage.length > 0 ? 'mt-2' : ''}`}>
+          {textOnly.map((m) => (
+            <span
+              key={m.name}
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                primary ? 'bg-accent/15 text-accent' : 'bg-border/50 text-muted'
+              }`}
+            >
+              {m.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Dataset attributions embed a URL ("© Gym visual — https://gymvisual.com/"); show it as a link. */
+function Attribution({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(https?:\/\/\S+)/g).map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noreferrer" className="underline">
+            {part.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
   )
 }

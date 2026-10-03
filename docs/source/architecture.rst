@@ -24,16 +24,28 @@ production, ``npm run build`` emits static assets that Flask serves
 directly, so the whole app is a single Waitress process plus one database
 file — deliberately simple to host.
 
-``external/exercises-dataset`` is a git submodule
-(https://github.com/hasaneyldrm/exercises-dataset) vendored at the repo
-root: the source of the built-in exercise template library (name,
-body part/equipment, English step-by-step instructions, and a thumbnail
-image per exercise). It never touches application code directly — the
-backend reads it only through ``scripts/seed_exercise_templates.py``,
-which imports it into the ``exercise_templates`` table, and through the
-``/api/exercise-templates/<id>/image`` route, which streams a thumbnail
-straight out of the checkout. Clone with
-``git clone --recurse-submodules``, or run
+Two git submodules under ``external/`` are the source of the built-in
+exercise library; neither is ever committed into this repo (RepDB's license
+forbids redistributing its dataset, and the original's images are
+© Gym visual):
+
+- ``external/repdb-exercise-dataset`` (https://github.com/RepDB/exercise-dataset,
+  "RepDB", 609 exercises): illustrations (two poses per exercise), step-by-step
+  instructions, tips, difficulty, primary/secondary muscles, and highlighted
+  muscle diagrams. Preferred wherever it covers an exercise.
+- ``external/exercises-dataset`` (https://github.com/hasaneyldrm/exercises-dataset,
+  1,324 exercises): the original source — name, body part/equipment, English
+  instructions, one thumbnail each. Stays as the fallback for everything RepDB
+  doesn't cover.
+
+They never touch application code directly: the backend reads them only
+through ``scripts/seed_exercise_templates.py``, which imports both into the
+``exercise_templates`` table, and through the
+``/api/exercise-templates/<id>/image[/<n>]`` and ``/api/muscles/<slug>/image``
+routes, which stream images straight out of the checkouts. Their locations are
+fixed attributes of ``Config`` (``EXERCISE_DATASET_DIR``, ``REPDB_DATASET_DIR``)
+rather than environment variables, since they live at a known place in the
+repo. Clone with ``git clone --recurse-submodules``, or run
 ``git submodule update --init --recursive`` after a plain clone.
 
 Backend layout
@@ -53,17 +65,16 @@ Backend layout
                           # streak calculation, unit conversion
      migrations/          # Alembic migration scripts (Flask-Migrate)
      scripts/
-       import_ods.py             # retired one-off importer for the legacy spreadsheet
        import_strong_csv.py      # ongoing importer, re-run per fresh Strong export
        backfill_workout_names.py # one-off: real names/timestamps for spreadsheet-era workouts
-       seed_exercises.py         # seeds the built-in exercise library
-       seed_exercise_templates.py # imports external/exercises-dataset into exercise_templates
-       ods_parser.py             # spreadsheet cell-format parsing, used by import_ods.py
+       seed_exercise_templates.py # imports both external/ datasets into exercise_templates (idempotent, --dry-run)
+       ods_parser.py             # spreadsheet cell-format parsing (shared with import_strong_csv.py)
      tests/
      wsgi.py              # Waitress entrypoint (production)
      run_dev.py           # Flask dev server entrypoint (development)
    external/
-     exercises-dataset/   # git submodule: exercise template data + images
+     exercises-dataset/        # git submodule: the original exercise dataset (fallback)
+     repdb-exercise-dataset/   # git submodule: RepDB (preferred where it covers an exercise)
 
 The API is versionless (``/api/...``) since it is a first-party API for
 this app's own frontend, not a public integration surface. All endpoints
@@ -137,10 +148,6 @@ Backend configuration is environment-variable driven (12-factor style):
    * - ``PORT``
      - ``8000``
      - Port Waitress binds to.
-   * - ``EXERCISE_DATASET_DIR``
-     - ``../external/exercises-dataset``
-     - Path to the exercises-dataset submodule checkout, read by
-       ``seed_exercise_templates.py`` and the template image route.
 
 Deployment is intentionally left to the user (per project scope) — the app
 just needs to run ``python wsgi.py`` (or any WSGI-compatible process

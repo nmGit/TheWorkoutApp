@@ -24,6 +24,26 @@ export function formatDuration(totalSeconds: number): string {
   return `${sign}${m}:${String(s).padStart(2, '0')}`
 }
 
+/** A rest duration as M:SS ("1:30", "0:45"), the way the rest timer counts. */
+export function formatRest(totalSeconds: number): string {
+  const safe = Math.max(0, Math.round(totalSeconds))
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`
+}
+
+/** Parse what someone types into a rest field: "1:30" (minutes:seconds) or a
+ * bare number of seconds ("90"). Empty means "no value" (null); anything
+ * else that doesn't parse is undefined. */
+export function parseRest(text: string): number | null | undefined {
+  const t = text.trim()
+  if (t === '') return null
+  const mmss = /^(\d{1,3}):(\d{1,2})$/.exec(t)
+  if (mmss) {
+    const seconds = Number(mmss[2])
+    return seconds < 60 ? Number(mmss[1]) * 60 + seconds : undefined
+  }
+  return /^\d{1,5}$/.test(t) ? Number(t) : undefined
+}
+
 export function formatElapsed(startedAt: string): string {
   const started = new Date(startedAt).getTime()
   const now = Date.now()

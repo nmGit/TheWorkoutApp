@@ -43,12 +43,12 @@ class WorkoutExercise(db.Model):
     workout_id = db.Column(
         db.Integer, db.ForeignKey("workouts.id", ondelete="CASCADE"), nullable=False
     )
-    exercise_id = db.Column(db.Integer, db.ForeignKey("exercises.id"), nullable=False)
+    exercise_id = db.Column(db.Integer, db.ForeignKey("exercise_templates.id"), nullable=False)
     position = db.Column(db.Integer, nullable=False, default=0)
     notes = db.Column(db.Text, nullable=True)
 
     workout = db.relationship("Workout", back_populates="exercises")
-    exercise = db.relationship("Exercise", back_populates="workout_exercises")
+    exercise = db.relationship("ExerciseTemplate")
     sets = db.relationship(
         "WorkoutSet",
         back_populates="workout_exercise",
@@ -73,6 +73,7 @@ class WorkoutSet(db.Model):
     reps = db.Column(db.Integer, nullable=True)
     duration_seconds = db.Column(db.Integer, nullable=True)
     distance_meters = db.Column(db.Numeric(8, 2), nullable=True)
+    rest_seconds = db.Column(db.Integer, nullable=True)
 
     is_warmup = db.Column(db.Boolean, nullable=False, default=False)
     is_dropset = db.Column(db.Boolean, nullable=False, default=False)

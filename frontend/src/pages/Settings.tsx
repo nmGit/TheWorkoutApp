@@ -6,6 +6,7 @@ import {
   useUpdateSettings,
   useUpsertBodyweight,
 } from '../api/settings'
+import { DurationInput } from '../components/DurationInput'
 import { Button, Card, PageTitle } from '../components/ui'
 import { formatDate, formatWeight } from '../lib/format'
 import { convertWeight } from '../lib/units'
@@ -56,13 +57,13 @@ export function SettingsPage() {
             onChange={(v) => updateSettings.mutate({ theme: v })}
           />
         </Field>
-        <Field label="Default rest timer (seconds)">
-          <input
-            type="number"
-            defaultValue={settings.default_rest_seconds}
-            onBlur={(e) => updateSettings.mutate({ default_rest_seconds: Number(e.target.value) })}
-            title="Global default rest timer duration in seconds"
-            className="h-10 w-24 rounded-md border border-border bg-bg px-2 text-sm"
+        <Field label="Default rest timer (m:ss)">
+          <DurationInput
+            value={settings.default_rest_seconds}
+            onCommit={(seconds) => seconds !== null && updateSettings.mutate({ default_rest_seconds: seconds })}
+            label="Default rest timer (m:ss)"
+            title="Used when an exercise has no rest history yet (m:ss, or seconds)"
+            className="h-10 w-24 rounded-md border border-border bg-bg px-2 text-center text-sm tabular-nums"
           />
         </Field>
       </Card>
@@ -103,6 +104,35 @@ export function SettingsPage() {
               </div>
             ))}
           </div>
+        </Card>
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">About &amp; credits</h2>
+        <Card className="space-y-2 text-sm">
+          <p>
+            Exercise data by{' '}
+            <a href="https://repdb.co" target="_blank" rel="noreferrer" className="underline">
+              RepDB (repdb.co)
+            </a>
+            : illustrations, instructions, tips and muscle diagrams.
+          </p>
+          <p>
+            Additional exercise data from the{' '}
+            <a
+              href="https://github.com/hasaneyldrm/exercises-dataset"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              exercises-dataset
+            </a>
+            ; images © Gym visual,{' '}
+            <a href="https://gymvisual.com/" target="_blank" rel="noreferrer" className="underline">
+              gymvisual.com
+            </a>
+            .
+          </p>
         </Card>
       </div>
     </div>

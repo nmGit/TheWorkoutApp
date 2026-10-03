@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.extensions import db
-from app.models.exercise import Exercise
+from app.models.exercise_template import ExerciseTemplate
 from app.models.template import TemplateExercise, WorkoutTemplate
 from app.models.workout import Workout
 from app.serializers import serialize_template
@@ -22,7 +22,7 @@ def _apply_exercises(template: WorkoutTemplate, exercises: list[dict]):
     for position, item in enumerate(exercises):
         if not item.get("exercise_id"):
             raise ApiError("Each template exercise requires exercise_id")
-        if db.session.get(Exercise, item["exercise_id"]) is None:
+        if db.session.get(ExerciseTemplate, item["exercise_id"]) is None:
             raise ApiError(f"Unknown exercise_id {item['exercise_id']}", 404)
         db.session.add(
             TemplateExercise(

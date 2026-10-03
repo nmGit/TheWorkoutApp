@@ -1,3 +1,6 @@
 [submodule "external/exercises-dataset"]
 	path = external/exercises-dataset
 	url = https://github.com/hasaneyldrm/exercises-dataset
+[submodule "external/repdb-exercise-dataset"]
+	path = external/repdb-exercise-dataset
+	url = https://github.com/RepDB/exercise-dataset

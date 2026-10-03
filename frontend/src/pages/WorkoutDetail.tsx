@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
-import { useExercise } from '../api/exercises'
+import { useExerciseTemplate } from '../api/exerciseTemplates'
 import { useExerciseStats } from '../api/stats'
 import { useCreateTemplateFromWorkout } from '../api/templates'
 import { useDeleteSet, useDeleteWorkout, useUpdateSet, useWorkout } from '../api/workouts'
@@ -66,7 +66,7 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
   const settings = useAppSettings()
   const updateSet = useUpdateSet(workout.id)
   const deleteSet = useDeleteSet(workout.id)
-  const { data: exercise } = useExercise(workoutExercise.exercise_id)
+  const { data: exercise } = useExerciseTemplate(workoutExercise.exercise_id)
   const { data: stats } = useExerciseStats(workoutExercise.exercise_id)
 
   const isPrWorkout = stats

@@ -35,11 +35,11 @@ class TemplateExercise(db.Model):
     template_id = db.Column(
         db.Integer, db.ForeignKey("workout_templates.id", ondelete="CASCADE"), nullable=False
     )
-    exercise_id = db.Column(db.Integer, db.ForeignKey("exercises.id"), nullable=False)
+    exercise_id = db.Column(db.Integer, db.ForeignKey("exercise_templates.id"), nullable=False)
     position = db.Column(db.Integer, nullable=False, default=0)
     target_sets = db.Column(db.Integer, nullable=True)
     target_reps = db.Column(db.String(32), nullable=True)
     target_weight = db.Column(db.Numeric(8, 4), nullable=True)
 
     template = db.relationship("WorkoutTemplate", back_populates="exercises")
-    exercise = db.relationship("Exercise", back_populates="template_exercises")
+    exercise = db.relationship("ExerciseTemplate")

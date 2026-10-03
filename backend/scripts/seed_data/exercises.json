@@ -162,12 +162,6 @@
       "tracking_type": "weight_reps"
     },
     {
-      "name": "Overhead Press (Barbell)",
-      "muscle_group": "Shoulders",
-      "equipment": "barbell",
-      "tracking_type": "weight_reps"
-    },
-    {
       "name": "Seated Shoulder Press (DB)",
       "muscle_group": "Shoulders",
       "equipment": "dumbbell",
@@ -265,12 +259,6 @@
     },
     {
       "name": "Tricep Extension",
-      "muscle_group": "Arms",
-      "equipment": "cable",
-      "tracking_type": "weight_reps"
-    },
-    {
-      "name": "Tricep Extension (Cable)",
       "muscle_group": "Arms",
       "equipment": "cable",
       "tracking_type": "weight_reps"
@@ -429,12 +417,6 @@
       "name": "Seated Palms Up Wrist Curl (Dumbbell)",
       "muscle_group": "Arms",
       "equipment": "dumbbell",
-      "tracking_type": "weight_reps"
-    },
-    {
-      "name": "Strict Military Press (Barbell)",
-      "muscle_group": "Shoulders",
-      "equipment": "barbell",
       "tracking_type": "weight_reps"
     },
     {

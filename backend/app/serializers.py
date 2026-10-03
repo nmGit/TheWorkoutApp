@@ -3,6 +3,11 @@
 Kept separate from the models so response shape can evolve independently
 of the ORM mapping (e.g. nesting, computed fields like `last_performed`).
 """
+import os
+import re
+from functools import lru_cache
+
+from flask import current_app
 
 
 def _num(value):
@@ -13,54 +18,73 @@ def serialize_muscle_group(mg):
     return {"id": mg.id, "name": mg.name, "display_order": mg.display_order}
 
 
-def serialize_exercise_template(template):
+@lru_cache(maxsize=8)
+def _muscle_image_slugs(dataset_dir: str) -> frozenset:
+    """Muscles RepDB ships a highlighted-body diagram for, as underscore
+    slugs (the files are dash-named, e.g. images/muscles/pectoralis-major.webp)."""
+    try:
+        names = os.listdir(os.path.join(dataset_dir, "images", "muscles"))
+    except OSError:
+        return frozenset()
+    return frozenset(n[:-5].replace("-", "_") for n in names if n.endswith(".webp"))
+
+
+def muscle_slug(name: str) -> str:
+    return re.sub(r"[\s\-]+", "_", name.strip().lower())
+
+
+def _muscle_swatch(name: str) -> dict:
+    """A muscle string exactly as its source dataset gave it (RepDB:
+    "pectoralis_major"; the original dataset: "pectorals"), plus a diagram
+    when RepDB happens to have one under the same name -- no translation
+    between the two vocabularies, so coarse legacy terms just get no image."""
+    slug = muscle_slug(name)
+    has_image = slug in _muscle_image_slugs(current_app.config["REPDB_DATASET_DIR"])
     return {
+        "name": re.sub(r"[_\-]+", " ", name).strip().title(),
+        "image_url": f"/api/muscles/{slug}/image" if has_image else None,
+    }
+
+
+def image_count(template) -> int:
+    """How many images a template has: RepDB's (1-2 poses) win over the
+    original dataset's single image."""
+    if template.repdb_images:
+        return len(template.repdb_images)
+    return 1 if template.image_path else 0
+
+
+def serialize_exercise_template(template, last_performed=None):
+    n_images = image_count(template)
+    image_urls = [
+        f"/api/exercise-templates/{template.id}/image" + ("" if i == 0 else f"/{i}")
+        for i in range(n_images)
+    ]
+    data = {
         "id": template.id,
         "external_id": template.external_id,
         "name": template.name,
         "category": template.category,
         "body_part": template.body_part,
         "equipment": template.equipment,
+        "equipment_raw": template.equipment_raw,
         "target_muscle": template.target_muscle,
         "muscle_group": template.muscle_group,
-        "secondary_muscles": template.secondary_muscles or [],
+        "muscle_group_id": template.muscle_group_id,
+        "muscle_group_name": template.app_muscle_group.name if template.app_muscle_group else None,
+        "tracking_type": template.tracking_type,
+        "primary_muscles": [_muscle_swatch(m) for m in (template.primary_muscles or [])],
+        "secondary_muscles": [_muscle_swatch(m) for m in (template.secondary_muscles or [])],
         "instructions": template.instructions,
         "instruction_steps": template.instruction_steps or [],
-        "image_url": f"/api/exercise-templates/{template.id}/image" if template.image_path else None,
+        "tips": template.tips or [],
+        "difficulty": template.difficulty,
+        "mechanic": template.mechanic,
+        "image_url": image_urls[0] if image_urls else None,
+        "image_urls": image_urls,
         "attribution": template.attribution,
+        "notes": template.notes,
         "is_custom": template.is_custom,
-    }
-
-
-def _exercise_template_summary(template):
-    """Slim view of a template embedded on an Exercise: just what the
-    exercise detail page needs to render the template's image and English
-    step-by-step instructions."""
-    if template is None:
-        return None
-    return {
-        "id": template.id,
-        "instructions": template.instructions,
-        "instruction_steps": template.instruction_steps or [],
-        "image_url": f"/api/exercise-templates/{template.id}/image" if template.image_path else None,
-        "attribution": template.attribution,
-        "is_custom": template.is_custom,
-    }
-
-
-def serialize_exercise(exercise, last_performed=None):
-    data = {
-        "id": exercise.id,
-        "name": exercise.name,
-        "muscle_group_id": exercise.muscle_group_id,
-        "muscle_group_name": exercise.muscle_group.name if exercise.muscle_group else None,
-        "equipment": exercise.equipment,
-        "tracking_type": exercise.tracking_type,
-        "is_custom": exercise.is_custom,
-        "default_rest_seconds": exercise.default_rest_seconds,
-        "notes": exercise.notes,
-        "template_id": exercise.template_id,
-        "template": _exercise_template_summary(exercise.template),
     }
     if last_performed is not None:
         data["last_performed"] = last_performed
@@ -102,6 +126,7 @@ def serialize_set(s):
         "reps": s.reps,
         "duration_seconds": s.duration_seconds,
         "distance_meters": _num(s.distance_meters),
+        "rest_seconds": s.rest_seconds,
         "is_warmup": s.is_warmup,
         "is_dropset": s.is_dropset,
         "rpe": _num(s.rpe),

@@ -71,6 +71,40 @@ export function ViewExerciseButton({ exerciseId }: { exerciseId: number }) {
   )
 }
 
+/** Press-and-hold-to-drag handle, used with `useDragReorder`'s
+ * `getHandleProps(key)` (spread onto this via `handleProps`) -- see that
+ * hook for why the touch/select-suppressing styles it provides are
+ * necessary and why they're applied unconditionally rather than only once
+ * a drag is active. */
+export function DragHandle({
+  handleProps,
+  isDragging,
+}: {
+  handleProps: Record<string, unknown>
+  isDragging?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      title="Press and hold to reorder"
+      aria-label="Reorder"
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-border/40 hover:text-fg ${
+        isDragging ? 'cursor-grabbing text-fg' : 'cursor-grab'
+      }`}
+      {...handleProps}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="9" cy="6" r="1.5" />
+        <circle cx="15" cy="6" r="1.5" />
+        <circle cx="9" cy="12" r="1.5" />
+        <circle cx="15" cy="12" r="1.5" />
+        <circle cx="9" cy="18" r="1.5" />
+        <circle cx="15" cy="18" r="1.5" />
+      </svg>
+    </button>
+  )
+}
+
 export function Badge({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'warn' | 'accent' }) {
   const tones: Record<string, string> = {
     default: 'bg-border/60 text-muted',

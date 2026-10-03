@@ -11,28 +11,41 @@ Entity-relationship overview
 
 .. code-block:: text
 
-   MuscleGroup 1───* Exercise 1───* TemplateExercise *───1 WorkoutTemplate
-                         │  │                                   │
-                         │  │ *                                 │ 1
-                         │  │                                   │
-                         │  1                                   * (optional, workout.template_id)
-                         │  ExerciseTemplate                     │
-                         │                                 WorkoutExercise *───────────────────────────1 Workout
-                         │ 1                                     │ 1
-                         │                                       │
-                         *                                       *
-                   WorkoutExercise                           WorkoutSet
+   MuscleGroup 1───* ExerciseTemplate 1───* TemplateExercise *───1 WorkoutTemplate
+                                    │                                   │
+                                    │                                   │ 1
+                                    │                                   │
+                                    │                                   * (optional, workout.template_id)
+                                    │                                   │
+                                    │                             WorkoutExercise *───────────────────────1 Workout
+                                    │ 1                                 │ 1
+                                    │                                   │
+                                    *                                   *
+                              WorkoutExercise                       WorkoutSet
 
    BodyweightEntry            (standalone, date + weight)
    UserSettings                (singleton row)
 
-Every ``Exercise`` optionally points at one ``ExerciseTemplate`` via
-``Exercise.template_id`` — the blueprint it was created from, which is
-where the app's image and step-by-step instructions live (see
-``ExerciseTemplate`` below and :doc:`features/exercise_library`).
+``ExerciseTemplate`` is the sole "what is this exercise" concept — name,
+muscle group, equipment, tracking type, description/instructions/notes.
+There is no separate per-user "Exercise" entity: a saved routine's slot
+(``TemplateExercise``) and a workout's logged block (``WorkoutExercise``)
+both link straight to it. This used to be two tables (a personal
+``Exercise`` linked via a nullable ``template_id`` to a dataset/custom
+``ExerciseTemplate``); they were merged after that nullable link let two
+different exercises collide onto one template (see :doc:`review` for the
+incident and :doc:`data_migration` for the merge itself). Dataset-sourced
+templates (``is_custom: false``) additionally carry image/instructions
+metadata from the bundled dataset submodules (RepDB and/or the original
+exercises-dataset); custom ones
+(``is_custom: true``) don't — that's the only real difference between the
+two, everything else about them (filtering, editing, logging, stats) is
+symmetric.
 
 Core tables
 -----------
+
+.. _model-musclegroup:
 
 ``MuscleGroup``
 ~~~~~~~~~~~~~~~~
@@ -55,59 +68,22 @@ Core tables
      - int
      - Controls ordering in exercise picker
 
-``Exercise``
-~~~~~~~~~~~~
-
-.. list-table::
-   :widths: 22 22 56
-   :header-rows: 1
-
-   * - Column
-     - Type
-     - Notes
-   * - id
-     - PK
-     -
-   * - name
-     - string
-     - e.g. ``Bench Press``, ``Incline Bench (Dumbbell)``
-   * - muscle_group_id
-     - FK -> MuscleGroup
-     -
-   * - equipment
-     - enum
-     - ``barbell`` / ``dumbbell`` / ``machine`` / ``cable`` / ``bodyweight``
-       / ``kettlebell`` / ``other``. Parsed from the trailing ``(...)`` in
-       legacy names where present, defaults to ``other``.
-   * - tracking_type
-     - enum
-     - ``weight_reps`` / ``bodyweight_reps`` / ``time`` / ``cardio``. Drives
-       which input fields the logging UI shows (see
-       :ref:`data_model:Set tracking types`).
-   * - is_custom
-     - bool
-     - ``false`` for the seeded library, ``true`` for user-created exercises
-   * - default_rest_seconds
-     - int, nullable
-     - Falls back to the global default in ``UserSettings`` when null
-   * - notes
-     - text, nullable
-     - Free-text (form cues, etc.)
-   * - template_id
-     - FK -> ExerciseTemplate, nullable
-     - The template this exercise was created from. Set for every exercise
-       created through the exercise picker (dataset-sourced or custom —
-       see ``ExerciseTemplate`` below); null only for pre-existing rows
-       from before templates existed.
+.. _model-exercisetemplate:
 
 ``ExerciseTemplate``
 ~~~~~~~~~~~~~~~~~~~~~
 
-A reusable exercise blueprint, sourced either from the bundled
-exercises-dataset submodule (``external/exercises-dataset``, imported by
-``scripts/seed_exercise_templates.py``) or authored by a user as a custom
-exercise. See :doc:`features/exercise_library` for how these surface in
-the UI.
+An exercise, the abstract idea of it — sourced from the bundled dataset
+submodules (RepDB at ``external/repdb-exercise-dataset`` and the original
+``external/exercises-dataset``, both imported by
+``scripts/seed_exercise_templates.py``) or authored by a user from scratch.
+A template can carry both sources' data: each source's own fields are stored
+exactly as that source provides them, RepDB's images/text/muscles are
+preferred wherever present, and the original's are the fallback. The
+app-owned fields (``name``, ``equipment``, ``tracking_type``,
+``muscle_group_id``, ``notes``, ``is_custom``) are set by seeding only when it
+creates the row, never refreshed on a re-run, so edits made in the app
+survive. See :doc:`features/exercise_library` for how these surface in the UI.
 
 .. list-table::
    :widths: 22 22 56
@@ -121,25 +97,53 @@ the UI.
      -
    * - external_id
      - string, unique, nullable
-     - The dataset's own id (e.g. ``"0001"``); null for custom templates.
+     - The *original* dataset's own id (e.g. ``"0001"``); null for custom
+       templates and for templates that came from RepDB.
+   * - repdb_id
+     - string(64), unique, nullable
+     - RepDB's id (a slug like ``bench-press``); set on every template RepDB
+       covers — whether it was created from RepDB or an existing template was
+       matched to it (see :doc:`data_migration`).
    * - name
      - string
-     -
-   * - category / body_part
-     - string, nullable
-     - Dataset vocabulary, e.g. ``upper legs``. Not the same list as
-       ``MuscleGroup.name`` — mapped onto the closest ``MuscleGroup`` at
-       exercise-creation time (see ``app/services/exercise_templates.py``).
+     - e.g. ``Bench Press``, ``Incline Bench (Dumbbell)``
+   * - muscle_group_id
+     - FK -> MuscleGroup, nullable
+     - This app's own fixed muscle group, used for filtering. Nullable at
+       the DB level (a handful of dataset ``body_part`` values have no
+       clean mapping), enforced non-null at the API layer for new/edited
+       templates.
    * - equipment
+     - enum, nullable
+     - This app's own fixed vocabulary — ``barbell`` / ``dumbbell`` /
+       ``machine`` / ``cable`` / ``bodyweight`` / ``kettlebell`` /
+       ``other`` — used for filtering. Nullable for the same reason as
+       ``muscle_group_id``.
+   * - equipment_raw
      - string, nullable
-     - Dataset's free-text equipment (e.g. ``leverage machine``), mapped
-       onto ``Exercise.equipment``'s fixed enum at creation time.
-   * - target_muscle / muscle_group
+     - The dataset's own original equipment wording (e.g.
+       ``leverage machine``), kept for display/reference only; null for
+       custom templates, which never had dataset wording to begin with.
+   * - tracking_type
+     - enum, nullable
+     - ``weight_reps`` / ``bodyweight_reps`` / ``time`` / ``cardio``. Drives
+       which input fields the logging UI shows (see
+       :ref:`data_model:Set tracking types`).
+   * - notes
+     - text, nullable
+     - Free-text (form cues, etc.)
+   * - category / body_part / target_muscle / muscle_group
      - string, nullable
-     - Primary target muscle and its synergist group, from the dataset.
-   * - secondary_muscles
+     - The dataset's own vocabulary/classification (e.g. ``body_part:
+       upper legs``) — display/reference only, never used for filtering.
+       Null for custom templates.
+   * - primary_muscles / secondary_muscles
      - JSON list of strings, nullable
-     -
+     - Muscles worked, exactly as the source dataset names them — RepDB's
+       anatomical slugs (``pectoralis_major``) or the original dataset's
+       terms (``pectorals``). Not translated between vocabularies; the UI
+       shows a muscle diagram only where RepDB happens to ship one under the
+       same name.
    * - instructions
      - text, nullable
      - Full English instructions as a single paragraph.
@@ -147,16 +151,31 @@ the UI.
      - JSON list of strings, nullable
      - Same instructions split into ordered steps; only English is
        imported even though the dataset ships 10 languages.
+   * - tips / difficulty / mechanic
+     - JSON list / string / string, nullable
+     - RepDB-only: form cues, ``beginner``/``intermediate``/``advanced``,
+       ``compound``/``isolation``.
+   * - repdb_images
+     - JSON list of strings, nullable
+     - RepDB image paths relative to its checkout: ``[start, peak]`` (two
+       poses) or ``[main]``. When set these win over ``image_path``; served
+       via ``GET /api/exercise-templates/<id>/image[/<n>]``.
    * - image_path
      - string, nullable
-     - Path relative to the dataset checkout (e.g.
-       ``images/0001-2gPfomN.jpg``); served via
-       ``GET /api/exercise-templates/<id>/image``.
+     - The original dataset's single image, relative to its checkout (e.g.
+       ``images/0001-2gPfomN.jpg``); the fallback when ``repdb_images`` is
+       empty.
+   * - aliases
+     - JSON list of strings, nullable
+     - Other names this exercise is known by — e.g. the Strong app's wording
+       for an exercise that was merged into this one — consulted by
+       ``import_strong_csv.py`` so a merged-away name still resolves.
    * - attribution
      - string, nullable
-     - Media copyright notice (``© Gym visual — https://gymvisual.com/``)
-       required by the dataset's media license; shown wherever the image
-       is displayed.
+     - The notice the image's license requires, matching whichever source
+       the shown image/text came from — ``© Gym visual — https://gymvisual.com/``
+       or ``Exercise data by RepDB (repdb.co) — https://repdb.co`` — shown
+       wherever the image is displayed.
    * - is_custom
      - bool
      - ``false`` for dataset-sourced templates, ``true`` for
@@ -164,6 +183,8 @@ the UI.
    * - created_at
      - datetime
      -
+
+.. _model-workouttemplate:
 
 ``WorkoutTemplate``
 ~~~~~~~~~~~~~~~~~~~~
@@ -193,6 +214,8 @@ A saved, reusable shape for a workout ("routine" in Strong's terms).
      - datetime
      -
 
+.. _model-templateexercise:
+
 ``TemplateExercise``
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -210,7 +233,7 @@ A saved, reusable shape for a workout ("routine" in Strong's terms).
      - FK -> WorkoutTemplate
      - Cascade delete with template
    * - exercise_id
-     - FK -> Exercise
+     - FK -> ExerciseTemplate
      -
    * - position
      - int
@@ -224,6 +247,8 @@ A saved, reusable shape for a workout ("routine" in Strong's terms).
    * - target_weight
      - decimal, nullable
      - Suggested starting weight, pre-fills the first set
+
+.. _model-workout:
 
 ``Workout``
 ~~~~~~~~~~~
@@ -265,6 +290,8 @@ a time** (see :doc:`api/workouts`).
        duplicate of a same-day ``BodyweightEntry``, not a foreign key,
        since the two are logged independently)
 
+.. _model-workoutexercise:
+
 ``WorkoutExercise``
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -284,7 +311,7 @@ One exercise block within a workout.
      - FK -> Workout
      - Cascade delete with workout
    * - exercise_id
-     - FK -> Exercise
+     - FK -> ExerciseTemplate
      -
    * - position
      - int
@@ -294,6 +321,8 @@ One exercise block within a workout.
      - e.g. ``felt heavy today`` — also used to carry a note when a
        historical entry recorded that the exercise was done but no set
        numbers were captured (see :doc:`data_migration`)
+
+.. _model-workoutset:
 
 ``WorkoutSet``
 ~~~~~~~~~~~~~~~
@@ -331,6 +360,13 @@ One exercise block within a workout.
      - decimal, nullable
      - Used by ``cardio`` tracking type; stored canonically in meters,
        displayed in mi/km per settings
+   * - rest_seconds
+     - int, nullable
+     - How long to rest after this set, in seconds — logged data, not a
+       config value (see :doc:`features/rest_timers`). Null until you type
+       one or complete the set (which saves the value the timer used); a null
+       field shows ghost text derived from the earlier sets in the block and
+       from last time. Not copied to new sets by "+ Add set".
    * - is_warmup
      - bool, default false
      - Excluded from PR/1RM calculations
@@ -345,6 +381,8 @@ One exercise block within a workout.
      - bool, default true
      - ``false`` for a set that was pre-filled (e.g., from a template's
        target) but not actually performed yet, while a workout is active
+
+.. _model-bodyweightentry:
 
 ``BodyweightEntry``
 ~~~~~~~~~~~~~~~~~~~~
@@ -368,6 +406,8 @@ One exercise block within a workout.
    * - unit
      - enum(``lbs``/``kg``)
      -
+
+.. _model-usersettings:
 
 ``UserSettings``
 ~~~~~~~~~~~~~~~~~
@@ -399,8 +439,8 @@ Set tracking types
 -------------------
 
 Rather than a separate table per exercise type, ``WorkoutSet`` has nullable
-typed columns and ``Exercise.tracking_type`` tells the frontend which of
-them apply. This keeps "all logged weights for exercise X over time" a
+typed columns and ``ExerciseTemplate.tracking_type`` tells the frontend
+which of them apply. This keeps "all logged weights for exercise X over time" a
 single-table scan instead of a union across subtype tables:
 
 .. list-table::

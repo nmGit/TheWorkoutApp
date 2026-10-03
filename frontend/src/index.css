@@ -70,3 +70,37 @@ input[type='number']::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* Two-pose exercise images (start / peak), shown as a 2-frame animation:
+   each pose for --pose-frame, alternating. Under reduced motion the two
+   poses are shown side by side instead. */
+.pose-animated {
+  --pose-frame: 1s;
+}
+.pose-frame {
+  animation: pose-swap calc(var(--pose-frame) * 2) steps(1, end) infinite;
+}
+.pose-frame-b {
+  animation-delay: calc(var(--pose-frame) * -1);
+}
+@keyframes pose-swap {
+  0%,
+  49.999% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.pose-static {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pose-animated {
+    display: none;
+  }
+  .pose-static {
+    display: flex;
+  }
+}

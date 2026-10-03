@@ -3,7 +3,8 @@ import pytest
 from app import create_app
 from app.config import Config
 from app.extensions import db
-from app.models.exercise import Exercise, MuscleGroup
+from app.models.exercise import MuscleGroup
+from app.models.exercise_template import ExerciseTemplate
 
 
 class TestConfig(Config):
@@ -35,7 +36,7 @@ def chest_group(app):
 
 @pytest.fixture()
 def bench_press(app, chest_group):
-    exercise = Exercise(
+    exercise = ExerciseTemplate(
         name="Bench Press",
         muscle_group_id=chest_group.id,
         equipment="barbell",

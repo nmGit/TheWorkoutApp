@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.extensions import db
-from app.models.exercise import Exercise, MuscleGroup
+from app.models.exercise_template import ExerciseTemplate
 from scripts.import_strong_csv import (
     _f,
     _i,
@@ -51,7 +51,7 @@ def test_resolve_exercise_exact_match(app, bench_press):
 
 
 def test_resolve_exercise_base_name_reconciles_equipment(app, chest_group):
-    ex = Exercise(
+    ex = ExerciseTemplate(
         name="Goblet Squat",
         muscle_group_id=chest_group.id,
         equipment="dumbbell",
@@ -82,3 +82,12 @@ def test_resolve_exercise_uses_cache(app, bench_press):
     # so it still resolves correctly even if called many times per import.
     second = resolve_exercise("Bench Press", cache)
     assert second is first
+
+
+def test_resolve_exercise_matches_an_alias(app, bench_press):
+    # A name the exercise was merged away from (or is also known by) must
+    # still resolve, otherwise the next Strong export would fail on it.
+    bench_press.aliases = ["Strict Bench (Barbell)"]
+    db.session.commit()
+    assert resolve_exercise("strict bench (barbell)", {}).id == bench_press.id
+    assert resolve_exercise("Strict Bench (Barbell)", {}).id == bench_press.id
