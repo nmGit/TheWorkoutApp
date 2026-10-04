@@ -400,7 +400,7 @@ start_server() {
 }
 
 # --------------------------------------------------------------------- main
-main() {
+parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --fresh) FRESH=1 ;;
@@ -417,6 +417,10 @@ main() {
     esac
     shift
   done
+}
+
+main() {
+  parse_args "$@"
 
   trap 'printf "%s✗ Setup stopped at line %s; see the output above. Fix it and re-run -- this script is safe to repeat.%s\n" "$RED" "$LINENO" "$OFF" >&2' ERR
 
@@ -438,5 +442,9 @@ main() {
   fi
 }
 
-main "$@"
-exit $?
+# Only run when executed directly; scripts/setup-dev.sh sources this file to
+# reuse the config functions (parse_args, apply_config).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+  exit $?
+fi

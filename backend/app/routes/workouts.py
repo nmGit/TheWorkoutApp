@@ -2,6 +2,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.exercise_template import ExerciseTemplate
@@ -10,6 +11,8 @@ from app.models.template import WorkoutTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import serialize_set, serialize_workout
 from app.services.dates import local_midnight_utc
+from app.services.generated_v2 import score_series_v2, strength_for_workout
+from app.services.strength import completed_workouts
 from app.validation import ApiError
 
 bp = Blueprint("workouts", __name__, url_prefix="/api")
@@ -42,10 +45,47 @@ def list_workouts():
     limit = request.args.get("limit", default=50, type=int)
     offset = request.args.get("offset", default=0, type=int)
 
+    # The muscle summary on each card reads every exercise's template, so load those
+    # in batches rather than one query per workout.
     workouts = (
-        query.order_by(Workout.started_at.desc()).offset(offset).limit(limit).all()
+        query.options(
+            selectinload(Workout.exercises)
+            .selectinload(WorkoutExercise.exercise)
+            .selectinload(ExerciseTemplate.app_muscle_group)
+        )
+        .order_by(Workout.started_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
     )
     return jsonify([serialize_workout(w, include_exercises=False) for w in workouts])
+
+
+@bp.get("/workouts/<int:workout_id>/strength")
+def get_workout_strength(workout_id):
+    workout = db.session.get(Workout, workout_id)
+    if workout is None:
+        raise ApiError("Workout not found", 404)
+    return jsonify(strength_for_workout(workout))
+
+
+@bp.get("/strength/history")
+def get_strength_history():
+    """The strength status of every completed workout, oldest first: the score (null during
+    warm-up), each muscle's status, and the template it came from."""
+    series = score_series_v2(completed_workouts())
+    return jsonify(
+        [
+            {
+                "workout_id": point["workout_id"],
+                "date": point["started_at"].replace(tzinfo=timezone.utc).isoformat(),
+                "template_id": point["template_id"],
+                "score": point["score"],
+                "muscles": point["muscles"],
+            }
+            for point in series
+        ]
+    )
 
 
 @bp.get("/workouts/active")
@@ -198,6 +238,20 @@ def reorder_workout_exercises(workout_id):
 
     db.session.commit()
     return jsonify(serialize_workout(workout))
+
+
+@bp.patch("/workouts/<int:workout_id>/exercises/<int:workout_exercise_id>")
+def update_workout_exercise(workout_id, workout_exercise_id):
+    """Edits what's specific to this instance of the exercise, currently its notes.
+    The template's notes (shared by every instance) are edited on the exercise."""
+    we = db.session.get(WorkoutExercise, workout_exercise_id)
+    if we is None or we.workout_id != workout_id:
+        raise ApiError("Workout exercise not found", 404)
+    body = request.get_json(force=True) or {}
+    if "notes" in body:
+        we.notes = (body["notes"] or "").strip() or None
+    db.session.commit()
+    return jsonify(serialize_workout(we.workout))
 
 
 @bp.delete("/workouts/<int:workout_id>/exercises/<int:workout_exercise_id>")

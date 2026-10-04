@@ -1,21 +1,33 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useInfiniteExerciseTemplates, useMuscleGroups } from '../api/exerciseTemplates'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useGroupMuscles, useInfiniteExerciseTemplates, useMuscleGroups } from '../api/exerciseTemplates'
 import { Button, LoadingState, PageTitle } from '../components/ui'
 import type { ExerciseTemplate } from '../types'
 
 export function ExerciseLibraryPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState('')
-  const [muscleGroupId, setMuscleGroupId] = useState<number | undefined>(undefined)
+  // The group and muscle filters live in the URL so other pages can link to a
+  // filtered view (e.g. ?group=2&muscle=pectoralis_major).
+  const muscleGroupId = Number(searchParams.get('group')) || undefined
+  const muscle = searchParams.get('muscle') || undefined
   const { data: groups } = useMuscleGroups()
+  const { data: groupMuscles } = useGroupMuscles(muscleGroupId)
   const {
     data,
     isLoading,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteExerciseTemplates({ q: query || undefined, muscleGroupId })
+  } = useInfiniteExerciseTemplates({ q: query || undefined, muscleGroupId, muscle })
+
+  const setFilters = (group: number | undefined, muscleSlug: string | undefined) => {
+    const next = new URLSearchParams()
+    if (group) next.set('group', String(group))
+    if (muscleSlug) next.set('muscle', muscleSlug)
+    setSearchParams(next)
+  }
 
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data])
   const total = data?.pages[0]?.total ?? 0
@@ -46,20 +58,40 @@ export function ExerciseLibraryPage() {
         className="h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm"
       />
       <div className="flex flex-wrap gap-1.5">
-        <FilterChip active={muscleGroupId === undefined} onClick={() => setMuscleGroupId(undefined)} title="Show all muscle groups">
+        <FilterChip active={muscleGroupId === undefined} onClick={() => setFilters(undefined, undefined)} title="Show all muscle groups">
           All
         </FilterChip>
         {groups?.map((g) => (
           <FilterChip
             key={g.id}
             active={muscleGroupId === g.id}
-            onClick={() => setMuscleGroupId(g.id)}
+            onClick={() => setFilters(g.id, undefined)}
             title={`Filter to ${g.name}`}
+            image={g.image_url}
           >
             {g.name}
           </FilterChip>
         ))}
       </div>
+
+      {muscleGroupId !== undefined && groupMuscles && groupMuscles.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <FilterChip active={muscle === undefined} onClick={() => setFilters(muscleGroupId, undefined)} title="Show every muscle in this group">
+            All
+          </FilterChip>
+          {groupMuscles.map((m) => (
+            <FilterChip
+              key={m.slug}
+              active={muscle === m.slug}
+              onClick={() => setFilters(muscleGroupId, m.slug)}
+              title={`Show exercises that work ${m.name}`}
+              image={m.image_url}
+            >
+              {m.name}
+            </FilterChip>
+          ))}
+        </div>
+      )}
 
       {isLoading && <LoadingState />}
 
@@ -111,21 +143,31 @@ function FilterChip({
   active,
   onClick,
   title,
+  image,
   children,
 }: {
   active: boolean
   onClick: () => void
   title?: string
+  /** Optional small diagram shown before the label. */
+  image?: string | null
   children: ReactNode
 }) {
   return (
     <button
       onClick={onClick}
       title={title}
-      className={`rounded-full px-3 py-1 text-xs font-medium ${
-        active ? 'bg-accent text-accent-fg' : 'bg-border/50 text-muted'
-      }`}
+      className={`inline-flex items-center gap-1.5 rounded-full py-1 text-xs font-medium ${
+        image ? 'pl-1 pr-3' : 'px-3'
+      } ${active ? 'bg-accent text-accent-fg' : 'bg-border/50 text-muted'}`}
     >
+      {image && (
+        <img
+          src={image}
+          alt=""
+          className={`h-5 w-5 shrink-0 rounded-full object-contain ${active ? 'bg-accent-fg/15' : 'bg-surface'}`}
+        />
+      )}
       {children}
     </button>
   )

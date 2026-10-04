@@ -11,6 +11,7 @@ import { Button, Card, PageTitle } from '../components/ui'
 import { formatDate, formatWeight } from '../lib/format'
 import { convertWeight } from '../lib/units'
 import type { DistanceUnit, Theme, WeightUnit } from '../types'
+import { useUndo } from '../context/UndoContext'
 
 export function SettingsPage() {
   const { data: settings } = useSettings()
@@ -18,6 +19,7 @@ export function SettingsPage() {
   const { data: bodyweight } = useBodyweightEntries()
   const upsertBodyweight = useUpsertBodyweight()
   const deleteBodyweight = useDeleteBodyweight()
+  const { deleteWithUndo, isHidden } = useUndo()
   const [newWeight, setNewWeight] = useState('')
 
   if (!settings) return null
@@ -85,7 +87,7 @@ export function SettingsPage() {
             </Button>
           </div>
           <div className="divide-y divide-border">
-            {bodyweight?.slice(0, 10).map((entry) => (
+            {bodyweight?.filter((e) => !isHidden(`bodyweight:${e.id}`)).slice(0, 10).map((entry) => (
               <div key={entry.id} className="flex items-center justify-between py-2 text-sm">
                 <span className="text-muted">{formatDate(entry.recorded_at)}</span>
                 <span className="font-medium">
@@ -95,7 +97,13 @@ export function SettingsPage() {
                   )}
                 </span>
                 <button
-                  onClick={() => deleteBodyweight.mutate(entry.id)}
+                  onClick={() =>
+                    deleteWithUndo({
+                      message: `Deleted ${formatDate(entry.recorded_at)} entry`,
+                      hideKey: `bodyweight:${entry.id}`,
+                      commit: () => deleteBodyweight.mutateAsync(entry.id),
+                    })
+                  }
                   title={`Delete the ${formatDate(entry.recorded_at)} entry`}
                   className="text-xs text-muted hover:text-danger"
                 >

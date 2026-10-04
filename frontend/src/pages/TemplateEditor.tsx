@@ -5,6 +5,7 @@ import { ExercisePicker } from '../components/ExercisePicker'
 import { Button, Card, DragHandle, LoadingState, PageTitle } from '../components/ui'
 import { useDragReorder } from '../hooks/useDragReorder'
 import type { ExerciseTemplate, TemplateExercise } from '../types'
+import { useUndo } from '../context/UndoContext'
 
 export function TemplateEditorPage() {
   const { id } = useParams()
@@ -36,6 +37,7 @@ export function TemplateEditorPage() {
   }
 
   const dragReorder = useDragReorder(exercises, (ex) => ex.id, persist)
+  const { showUndo } = useUndo()
 
   if (isLoading || !template) return <LoadingState />
 
@@ -45,7 +47,12 @@ export function TemplateEditorPage() {
   }
 
   const removeExercise = (index: number) => {
+    const previous = exercises
     persist(exercises.filter((_, i) => i !== index))
+    showUndo({
+      message: `Removed ${previous[index].exercise_name ?? 'exercise'}`,
+      onUndo: () => persist(previous),
+    })
   }
 
   const addExercise = (exercise: ExerciseTemplate) => {

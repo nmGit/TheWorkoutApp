@@ -8,8 +8,15 @@ from app.extensions import db
 from app.models.exercise import EQUIPMENT_TYPES, TRACKING_TYPES, MuscleGroup
 from app.models.exercise_template import ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise
-from app.serializers import serialize_exercise_template, serialize_muscle_group, serialize_set
+from app.serializers import (
+    canonical_muscle_slug,
+    muscle_swatch,
+    serialize_exercise_template,
+    serialize_muscle_group,
+    serialize_set,
+)
 from app.services.dates import local_date
+from app.services.exercise_templates import GROUP_MUSCLES
 from app.validation import ApiError
 
 bp = Blueprint("exercise_templates", __name__, url_prefix="/api")
@@ -21,6 +28,44 @@ MAX_LIMIT = 100
 def list_muscle_groups():
     groups = MuscleGroup.query.order_by(MuscleGroup.display_order).all()
     return jsonify([serialize_muscle_group(g) for g in groups])
+
+
+@bp.get("/muscle-groups/<int:group_id>/muscles")
+def list_group_muscles(group_id):
+    """The muscles that make up this group (e.g. "Pectoralis Major" under Chest),
+    sorted by name, limited to those the group's exercises actually train as primary
+    muscles. The group's membership comes from GROUP_MUSCLES, not from the exercises
+    alone, so a stray primary doesn't leak into the wrong group."""
+    group = db.session.get(MuscleGroup, group_id)
+    if group is None:
+        raise ApiError("Unknown muscle group", 404)
+    members = GROUP_MUSCLES.get(group.name, set())
+    found = {}
+    for t in ExerciseTemplate.query.filter_by(muscle_group_id=group_id):
+        for raw in t.primary_muscles or []:
+            slug = canonical_muscle_slug(raw)
+            if slug in members:
+                found.setdefault(slug, muscle_swatch(raw))
+    return jsonify(
+        sorted(
+            ({"slug": slug, **swatch} for slug, swatch in found.items()),
+            key=lambda m: m["name"],
+        )
+    )
+
+
+def _template_ids_for_muscle(slug: str) -> list[int]:
+    """Templates whose primary or secondary muscles include this slug. Done in
+    Python because the muscle lists are JSON and the names aren't normalised
+    in the database."""
+    rows = db.session.query(
+        ExerciseTemplate.id, ExerciseTemplate.primary_muscles, ExerciseTemplate.secondary_muscles
+    ).all()
+    return [
+        template_id
+        for template_id, primary, secondary in rows
+        if slug in {canonical_muscle_slug(m) for m in (primary or []) + (secondary or [])}
+    ]
 
 
 def _last_performed(template: ExerciseTemplate):
@@ -63,6 +108,9 @@ def list_exercise_templates():
         if db.session.get(MuscleGroup, muscle_group_id) is None:
             raise ApiError("Unknown muscle_group_id", 404)
         query = query.filter(ExerciseTemplate.muscle_group_id == muscle_group_id)
+    muscle = request.args.get("muscle")
+    if muscle:
+        query = query.filter(ExerciseTemplate.id.in_(_template_ids_for_muscle(muscle)))
     equipment = request.args.get("equipment")
     if equipment:
         query = query.filter(ExerciseTemplate.equipment == equipment)

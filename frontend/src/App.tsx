@@ -14,6 +14,7 @@ import { WorkoutDetailPage } from './pages/WorkoutDetail'
 function App() {
   return (
     <div className="min-h-full pb-24">
+      <RestTimerBar />
       <main className="mx-auto max-w-xl px-4 pt-6">
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -28,7 +29,6 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      <RestTimerBar />
       <NavBar />
     </div>
   )

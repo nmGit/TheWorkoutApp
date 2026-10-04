@@ -50,3 +50,9 @@ Workouts
 
 ``DELETE /api/sets/:id``
    Remove a single set.
+
+``GET /api/workouts/<id>/strength``
+   Per-muscle strength against your usual, as described in
+   :doc:`../features/strength_score`. Returns ``score`` (or ``null`` during the
+   warm-up period) and ``muscles``, keyed by canonical slug, each with a
+   ``status`` (``scored``, ``no_baseline``, or ``pending``) and a ``ratio``.

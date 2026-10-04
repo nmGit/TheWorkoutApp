@@ -41,9 +41,10 @@ export function useDeleteBodyweight() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.delete(`/bodyweight/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bodyweight'] })
-      qc.invalidateQueries({ queryKey: ['bodyweight-stats'] })
-    },
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['bodyweight'] }),
+        qc.invalidateQueries({ queryKey: ['bodyweight-stats'] }),
+      ]),
   })
 }

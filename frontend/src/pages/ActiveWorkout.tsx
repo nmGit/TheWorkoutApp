@@ -21,6 +21,9 @@ import { useGlobalRestTimer } from '../context/RestTimerContext'
 import { useDragReorder } from '../hooks/useDragReorder'
 import { formatElapsed } from '../lib/format'
 import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
+import { useUndo } from '../context/UndoContext'
+import { WorkoutMusclesHeader } from '../components/WorkoutMuscles'
+import { ExerciseNotesMenu, ExerciseNotesPanel, type NoteKind } from '../components/ExerciseNotes'
 
 export function ActiveWorkoutPage() {
   const navigate = useNavigate()
@@ -35,6 +38,7 @@ export function ActiveWorkoutPage() {
 
   const updateWorkout = useUpdateWorkout(workout?.id ?? -1)
   const deleteWorkout = useDeleteWorkout()
+  const { deleteWithUndo, isHidden } = useUndo()
   const addExercise = useAddWorkoutExercise(workout?.id ?? -1)
   const reorderExercises = useReorderWorkoutExercises(workout?.id ?? -1)
   const { data: template } = useTemplate(workout?.template_id ?? undefined)
@@ -99,9 +103,12 @@ export function ActiveWorkoutPage() {
     navigate(`/history/${workout.id}`)
   }
 
-  const handleDiscard = async () => {
-    if (!confirm('Discard this workout? This cannot be undone.')) return
-    await deleteWorkout.mutateAsync(workout.id)
+  const handleDiscard = () => {
+    deleteWithUndo({
+      message: 'Workout discarded',
+      hideKey: `workout:${workout.id}`,
+      commit: () => deleteWorkout.mutateAsync(workout.id),
+    })
     timer.clear()
     navigate('/')
   }
@@ -134,20 +141,23 @@ export function ActiveWorkoutPage() {
         </div>
       </div>
 
+      <WorkoutMusclesHeader workoutId={workout.id} muscles={workout.muscles} />
+
       {workout.exercises.length === 0 && (
         <EmptyState title="No exercises yet" hint="Add your first exercise to start logging sets." />
       )}
 
       <div className="space-y-3">
-        {workout.exercises.map((we) => (
-          <div key={we.id} ref={dragReorder.getItemRef(we.id)}>
-            <ExerciseBlock
-              workout={workout}
-              workoutExercise={we}
-              handleProps={dragReorder.getHandleProps(we.id)}
-              isDragging={dragReorder.isBeingDragged(we.id)}
-            />
-          </div>
+        {workout.exercises.map((we) =>
+          isHidden(`workout-exercise:${we.id}`) ? null : (
+            <div key={we.id} ref={dragReorder.getItemRef(we.id)}>
+              <ExerciseBlock
+                workout={workout}
+                workoutExercise={we}
+                handleProps={dragReorder.getHandleProps(we.id)}
+                isDragging={dragReorder.isBeingDragged(we.id)}
+              />
+            </div>
         ))}
       </div>
 
@@ -219,6 +229,8 @@ function ExerciseBlock({
   const updateSet = useUpdateSet(workout.id)
   const deleteSet = useDeleteSet(workout.id)
   const removeExercise = useRemoveWorkoutExercise(workout.id)
+  const { deleteWithUndo, isHidden } = useUndo()
+  const [editingNote, setEditingNote] = useState<NoteKind | null>(null)
   const { data: history } = useExerciseHistory(workoutExercise.exercise_id)
 
   const previousSets: WorkoutSet[] = history?.items.find((item) => item.workout_id !== workout.id)?.sets ?? []
@@ -263,8 +275,15 @@ function ExerciseBlock({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
+          <ExerciseNotesMenu onChoose={setEditingNote} />
           <button
-            onClick={() => removeExercise.mutate(workoutExercise.id)}
+            onClick={() =>
+              deleteWithUndo({
+                message: `Removed ${workoutExercise.exercise_name ?? 'exercise'}`,
+                hideKey: `workout-exercise:${workoutExercise.id}`,
+                commit: () => removeExercise.mutateAsync(workoutExercise.id),
+              })
+            }
             title="Remove this exercise from the workout"
             className="px-1 text-xs text-muted hover:text-danger"
           >
@@ -273,20 +292,34 @@ function ExerciseBlock({
         </div>
       </div>
 
+      <ExerciseNotesPanel
+        workoutId={workout.id}
+        workoutExercise={workoutExercise}
+        editing={editingNote}
+        onDone={() => setEditingNote(null)}
+      />
+
       <div className="space-y-0.5">
-        {workoutExercise.sets.map((set, i) => (
-          <SetRow
-            key={set.id}
-            set={set}
-            index={i}
-            trackingType={trackingType}
-            weightUnit={settings.weight_unit}
-            previousSet={previousSets[i]}
-            restGhostSeconds={restGhost(i)}
-            onChange={(patch) => handleChange(set, i, patch)}
-            onToggleComplete={() => handleToggleComplete(set, i)}
-            onDelete={() => deleteSet.mutate(set.id)}
-          />
+        {workoutExercise.sets.map((set, i) =>
+          isHidden(`set:${set.id}`) ? null : (
+            <SetRow
+              key={set.id}
+              set={set}
+              index={i}
+              trackingType={trackingType}
+              weightUnit={settings.weight_unit}
+              previousSet={previousSets[i]}
+              restGhostSeconds={restGhost(i)}
+              onChange={(patch) => handleChange(set, i, patch)}
+              onToggleComplete={() => handleToggleComplete(set, i)}
+              onDelete={() =>
+                deleteWithUndo({
+                  message: 'Set deleted',
+                  hideKey: `set:${set.id}`,
+                  commit: () => deleteSet.mutateAsync(set.id),
+                })
+              }
+            />
         ))}
       </div>
 

@@ -5,6 +5,7 @@ of the ORM mapping (e.g. nesting, computed fields like `last_performed`).
 """
 import os
 import re
+from datetime import timezone
 from functools import lru_cache
 
 from flask import current_app
@@ -14,8 +15,39 @@ def _num(value):
     return float(value) if value is not None else None
 
 
+# A diagram that stands in for each muscle group in the exercise filter chips.
+# Groups without a single representative muscle (Full Body, Cardio, Mobility)
+# get no image.
+GROUP_DIAGRAM_MUSCLE = {
+    "Chest": "pectoralis_major",
+    "Back": "latissimus_dorsi",
+    "Shoulders": "lateral_deltoid",
+    "Arms": "biceps_brachii",
+    "Core": "rectus_abdominis",
+    "Legs": "quadriceps",
+}
+
+
+def _utc_iso(dt):
+    """A datetime as ISO 8601 with an explicit UTC offset. Every stored timestamp is
+    UTC, but SQLite hands them back naive, and a naive string reads as *local* time in
+    a browser -- which put a workout started a few hours ago in the future, so its
+    elapsed time sat at 0."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
 def serialize_muscle_group(mg):
-    return {"id": mg.id, "name": mg.name, "display_order": mg.display_order}
+    diagram = GROUP_DIAGRAM_MUSCLE.get(mg.name)
+    return {
+        "id": mg.id,
+        "name": mg.name,
+        "display_order": mg.display_order,
+        "image_url": muscle_swatch(diagram)["image_url"] if diagram else None,
+    }
 
 
 @lru_cache(maxsize=8)
@@ -33,15 +65,36 @@ def muscle_slug(name: str) -> str:
     return re.sub(r"[\s\-]+", "_", name.strip().lower())
 
 
-def _muscle_swatch(name: str) -> dict:
-    """A muscle string exactly as its source dataset gave it (RepDB:
-    "pectoralis_major"; the original dataset: "pectorals"), plus a diagram
-    when RepDB happens to have one under the same name -- no translation
-    between the two vocabularies, so coarse legacy terms just get no image."""
+# The original dataset's short spellings for muscles RepDB names in full. Only
+# unambiguous ones: "forearms" could mean the flexors, the extensors or both.
+MUSCLE_SYNONYMS = {
+    "biceps": "biceps_brachii",
+    "triceps": "triceps_brachii",
+    "traps": "trapezius",
+    "glutes": "gluteus_maximus",
+    "abs": "rectus_abdominis",
+    "pectorals": "pectoralis_major",
+}
+
+def muscle_display_name(name: str) -> str:
+    return re.sub(r"[_\-]+", " ", name).strip().title()
+
+
+def canonical_muscle_slug(name: str) -> str:
+    """The key a muscle is known by across both datasets: "biceps" and
+    "biceps_brachii" are the same muscle. The exercise library filters on this."""
     slug = muscle_slug(name)
+    return MUSCLE_SYNONYMS.get(slug, slug)
+
+
+def muscle_swatch(name: str) -> dict:
+    """A muscle as the app shows it: its canonical slug and display name, plus a
+    diagram when RepDB has one for it."""
+    slug = canonical_muscle_slug(name)
     has_image = slug in _muscle_image_slugs(current_app.config["REPDB_DATASET_DIR"])
     return {
-        "name": re.sub(r"[_\-]+", " ", name).strip().title(),
+        "slug": slug,
+        "name": muscle_display_name(slug),
         "image_url": f"/api/muscles/{slug}/image" if has_image else None,
     }
 
@@ -73,8 +126,8 @@ def serialize_exercise_template(template, last_performed=None):
         "muscle_group_id": template.muscle_group_id,
         "muscle_group_name": template.app_muscle_group.name if template.app_muscle_group else None,
         "tracking_type": template.tracking_type,
-        "primary_muscles": [_muscle_swatch(m) for m in (template.primary_muscles or [])],
-        "secondary_muscles": [_muscle_swatch(m) for m in (template.secondary_muscles or [])],
+        "primary_muscles": [muscle_swatch(m) for m in (template.primary_muscles or [])],
+        "secondary_muscles": [muscle_swatch(m) for m in (template.secondary_muscles or [])],
         "instructions": template.instructions,
         "instruction_steps": template.instruction_steps or [],
         "tips": template.tips or [],
@@ -103,15 +156,36 @@ def serialize_template_exercise(te):
     }
 
 
+def muscle_summary(exercise_templates) -> dict:
+    """The muscles a set of exercises works, as canonical slugs: `primary` (worked
+    mainly by at least one exercise) and `secondary` (incidental, and not already
+    primary), plus the names of the muscle groups they belong to, in the app's
+    group order. Exercises not yet linked to a template are skipped."""
+    primary, secondary, groups = set(), set(), {}
+    for ex in exercise_templates:
+        if ex is None:
+            continue
+        primary.update(canonical_muscle_slug(m) for m in ex.primary_muscles or [])
+        secondary.update(canonical_muscle_slug(m) for m in ex.secondary_muscles or [])
+        if ex.app_muscle_group is not None:
+            groups[ex.app_muscle_group.name] = ex.app_muscle_group.display_order
+    return {
+        "primary": sorted(primary),
+        "secondary": sorted(secondary - primary),
+        "groups": sorted(groups, key=lambda name: groups[name]),
+    }
+
+
 def serialize_template(template, include_exercises=True):
     data = {
         "id": template.id,
         "name": template.name,
         "notes": template.notes,
         "display_order": template.display_order,
-        "created_at": template.created_at.isoformat() if template.created_at else None,
-        "updated_at": template.updated_at.isoformat() if template.updated_at else None,
+        "created_at": _utc_iso(template.created_at),
+        "updated_at": _utc_iso(template.updated_at),
     }
+    data["muscles"] = muscle_summary(te.exercise for te in template.exercises)
     if include_exercises:
         data["exercises"] = [serialize_template_exercise(te) for te in template.exercises]
     return data
@@ -154,11 +228,12 @@ def serialize_workout(workout, include_exercises=True):
         "name": workout.name,
         "template_id": workout.template_id,
         "template_name": workout.template.name if workout.template else None,
-        "started_at": workout.started_at.isoformat() if workout.started_at else None,
-        "completed_at": workout.completed_at.isoformat() if workout.completed_at else None,
+        "started_at": _utc_iso(workout.started_at),
+        "completed_at": _utc_iso(workout.completed_at),
         "notes": workout.notes,
         "body_weight": _num(workout.body_weight),
         "is_active": workout.is_active,
+        "muscles": muscle_summary(we.exercise for we in workout.exercises),
     }
     if include_exercises:
         data["exercises"] = [

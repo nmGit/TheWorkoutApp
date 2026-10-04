@@ -20,7 +20,13 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* The MuscleMapJS source has unused locals that would fail these checks. Type-check
+       against our declaration of the slice we use instead; Vite still bundles the real package. */
+    "paths": {
+      "@abdofallah/musclemap-js": ["./src/types/musclemap-js.d.ts"]
+    }
   },
   "include": ["src"]
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useExerciseTemplate } from '../api/exerciseTemplates'
 import { useExerciseStats } from '../api/stats'
@@ -6,8 +7,11 @@ import { useDeleteSet, useDeleteWorkout, useUpdateSet, useWorkout } from '../api
 import { SetRow } from '../components/SetRow'
 import { Badge, Button, Card, LoadingState, PageTitle, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
-import { formatDate } from '../lib/format'
+import { formatDate, formatWorkoutDuration } from '../lib/format'
 import type { Workout, WorkoutExercise } from '../types'
+import { useUndo } from '../context/UndoContext'
+import { WorkoutMusclesHeader } from '../components/WorkoutMuscles'
+import { ExerciseNotesMenu, ExerciseNotesPanel, type NoteKind } from '../components/ExerciseNotes'
 
 export function WorkoutDetailPage() {
   const { workoutId } = useParams()
@@ -16,6 +20,7 @@ export function WorkoutDetailPage() {
   const { data: workout, isLoading } = useWorkout(id)
   const createTemplate = useCreateTemplateFromWorkout()
   const deleteWorkout = useDeleteWorkout()
+  const { deleteWithUndo } = useUndo()
 
   if (isLoading || !workout) return <LoadingState />
 
@@ -24,9 +29,12 @@ export function WorkoutDetailPage() {
     navigate(`/templates/${template.id}`)
   }
 
-  const handleDelete = async () => {
-    if (!confirm('Delete this workout permanently?')) return
-    await deleteWorkout.mutateAsync(workout.id)
+  const handleDelete = () => {
+    deleteWithUndo({
+      message: 'Workout deleted',
+      hideKey: `workout:${workout.id}`,
+      commit: () => deleteWorkout.mutateAsync(workout.id),
+    })
     navigate('/history')
   }
 
@@ -34,9 +42,13 @@ export function WorkoutDetailPage() {
     <div className="space-y-4">
       <PageTitle>{workout.name}</PageTitle>
       <p className="-mt-3 text-sm text-muted">
-        {formatDate(workout.started_at)}
+        {[formatDate(workout.started_at), formatWorkoutDuration(workout.started_at, workout.completed_at)]
+          .filter(Boolean)
+          .join(' · ')}
         {workout.template_name ? ` · from ${workout.template_name}` : ''}
       </p>
+
+      <WorkoutMusclesHeader workoutId={workout.id} muscles={workout.muscles} />
 
       <div className="space-y-3">
         {workout.exercises.map((we) => (
@@ -66,8 +78,10 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
   const settings = useAppSettings()
   const updateSet = useUpdateSet(workout.id)
   const deleteSet = useDeleteSet(workout.id)
+  const { deleteWithUndo, isHidden } = useUndo()
   const { data: exercise } = useExerciseTemplate(workoutExercise.exercise_id)
   const { data: stats } = useExerciseStats(workoutExercise.exercise_id)
+  const [editingNote, setEditingNote] = useState<NoteKind | null>(null)
 
   const isPrWorkout = stats
     ? Object.values(stats.personal_records).some((pr) => pr?.workout_id === workout.id)
@@ -81,21 +95,36 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
           {isPrWorkout && <Badge tone="accent">PR</Badge>}
           {exercise?.equipment && <Badge>{exercise.equipment}</Badge>}
         </div>
-        <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
+        <div className="flex shrink-0 items-center gap-1">
+          <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
+          <ExerciseNotesMenu onChoose={setEditingNote} />
+        </div>
       </div>
-      {workoutExercise.notes && <p className="mb-2 text-xs text-muted">{workoutExercise.notes}</p>}
+      <ExerciseNotesPanel
+        workoutId={workout.id}
+        workoutExercise={workoutExercise}
+        editing={editingNote}
+        onDone={() => setEditingNote(null)}
+      />
       <div className="space-y-0.5">
-        {workoutExercise.sets.map((set, i) => (
-          <SetRow
-            key={set.id}
-            set={set}
-            index={i}
-            trackingType={workoutExercise.tracking_type ?? 'weight_reps'}
-            weightUnit={settings.weight_unit}
-            onChange={(patch) => updateSet.mutate({ setId: set.id, data: patch })}
-            onToggleComplete={() => updateSet.mutate({ setId: set.id, data: { completed: !set.completed } })}
-            onDelete={() => deleteSet.mutate(set.id)}
-          />
+        {workoutExercise.sets.map((set, i) =>
+          isHidden(`set:${set.id}`) ? null : (
+            <SetRow
+              key={set.id}
+              set={set}
+              index={i}
+              trackingType={workoutExercise.tracking_type ?? 'weight_reps'}
+              weightUnit={settings.weight_unit}
+              onChange={(patch) => updateSet.mutate({ setId: set.id, data: patch })}
+              onToggleComplete={() => updateSet.mutate({ setId: set.id, data: { completed: !set.completed } })}
+              onDelete={() =>
+                deleteWithUndo({
+                  message: 'Set deleted',
+                  hideKey: `set:${set.id}`,
+                  commit: () => deleteSet.mutateAsync(set.id),
+                })
+              }
+            />
         ))}
       </div>
     </Card>

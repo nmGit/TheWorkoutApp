@@ -15,6 +15,8 @@ export interface MuscleGroup {
   id: number
   name: string
   display_order: number
+  /** Small diagram standing in for the group, or null when there isn't one. */
+  image_url: string | null
 }
 
 export interface LastPerformed {
@@ -25,6 +27,15 @@ export interface LastPerformed {
 /** A muscle as its source dataset names it, plus a highlighted-body diagram
  * when RepDB happens to have one under the same name. */
 export interface MuscleSwatch {
+  /** Stable key (e.g. "pectoralis_major") used to filter the exercise library. */
+  slug: string
+  name: string
+  image_url: string | null
+}
+
+/** A specific muscle that some exercise in a muscle group works. */
+export interface MuscleOption {
+  slug: string
   name: string
   image_url: string | null
 }
@@ -93,6 +104,41 @@ export interface WorkoutExercise {
   sets: WorkoutSet[]
 }
 
+/** The muscles a workout or template works, rolled up from its exercises. Slugs
+ * are canonical (see lib/muscleMap.ts); groups are in the app's group order. */
+/** Strength status of one muscle in one workout (see docs/source/features/strength_score.rst).
+ * "scored": ratio is this workout's value against the muscle's moving average (1.0 = no change).
+ * "no_baseline": worked, but not enough earlier workouts to compare with yet.
+ * "pending": planned or skipped, with no completed set yet. */
+export type StrengthStatus = 'scored' | 'no_baseline' | 'pending'
+
+export interface MuscleStrength {
+  status: StrengthStatus
+  ratio: number | null
+  /** How much logged work the muscle's change rests on (higher is more evidence). */
+  evidence?: number
+}
+
+export interface WorkoutStrength {
+  /** Geometric mean of the scored muscles' ratios; null until some muscle has enough history. */
+  score: number | null
+  /** Keyed by canonical muscle slug. Muscles not listed have no data. */
+  muscles: Record<string, MuscleStrength>
+}
+
+/** One completed workout's strength score. `score` is null during the warm-up period. */
+export interface StrengthPoint extends WorkoutStrength {
+  workout_id: number
+  date: string
+  template_id: number | null
+}
+
+export interface MuscleSummary {
+  primary: string[]
+  secondary: string[]
+  groups: string[]
+}
+
 export interface Workout {
   id: number
   name: string
@@ -104,6 +150,7 @@ export interface Workout {
   body_weight: number | null
   is_active: boolean
   exercises: WorkoutExercise[]
+  muscles: MuscleSummary
 }
 
 export interface WorkoutSummary extends Omit<Workout, 'exercises'> {
@@ -127,6 +174,7 @@ export interface WorkoutTemplate {
   display_order: number
   created_at: string
   updated_at: string
+  muscles: MuscleSummary
   exercises: TemplateExercise[]
 }
 

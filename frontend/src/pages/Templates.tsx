@@ -1,7 +1,11 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCreateTemplate, useDeleteTemplate, useTemplates } from '../api/templates'
-import { useActiveWorkout, useStartWorkout } from '../api/workouts'
+import { useActiveWorkout, useStartWorkout, useStrengthHistory } from '../api/workouts'
 import { Button, Card, EmptyState, LoadingState, PageTitle } from '../components/ui'
+import { useUndo } from '../context/UndoContext'
+import type { StrengthPoint } from '../types'
+import { TemplateMapThumb } from '../components/WorkoutMuscles'
 
 export function TemplatesPage() {
   const navigate = useNavigate()
@@ -9,7 +13,17 @@ export function TemplatesPage() {
   const createTemplate = useCreateTemplate()
   const deleteTemplate = useDeleteTemplate()
   const startWorkout = useStartWorkout()
-  const { data: activeWorkout } = useActiveWorkout()
+  const { deleteWithUndo, isHidden } = useUndo()
+  const { data: pendingActive } = useActiveWorkout()
+  const activeWorkout = pendingActive && !isHidden(`workout:${pendingActive.id}`) ? pendingActive : undefined
+  const visibleTemplates = templates?.filter((t) => !isHidden(`template:${t.id}`))
+  const { data: history } = useStrengthHistory()
+  // Points are oldest first, so the last one for a template is its latest instance.
+  const latestByTemplate = useMemo(() => {
+    const map = new Map<number, StrengthPoint>()
+    for (const p of history ?? []) if (p.template_id !== null) map.set(p.template_id, p)
+    return map
+  }, [history])
 
   const handleCreate = async () => {
     const template = await createTemplate.mutateAsync({ name: 'New Template', exercises: [] })
@@ -39,21 +53,32 @@ export function TemplatesPage() {
         Templates
       </PageTitle>
 
-      {templates?.length === 0 ? (
+      {visibleTemplates?.length === 0 ? (
         <EmptyState title="No templates yet" hint="Create a routine to start workouts with one tap." />
       ) : (
         <div className="space-y-3">
-          {templates?.map((t) => (
+          {visibleTemplates?.map((t) => (
             <Card key={t.id} className="space-y-2">
-              <div className="flex items-start justify-between">
-                <button className="text-left" onClick={() => navigate(`/templates/${t.id}`)} title={`Edit "${t.name}"`}>
+              <div className="flex items-start gap-3">
+                <TemplateMapThumb muscles={t.muscles} latest={latestByTemplate.get(t.id)} />
+                <button
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => navigate(`/templates/${t.id}`)}
+                  title={`Edit "${t.name}"`}
+                >
                   <p className="font-semibold">{t.name}</p>
                   <p className="text-xs text-muted">
                     {t.exercises.map((e) => e.exercise_name).join(', ') || 'No exercises yet'}
                   </p>
                 </button>
                 <button
-                  onClick={() => deleteTemplate.mutate(t.id)}
+                  onClick={() =>
+                    deleteWithUndo({
+                      message: `Deleted "${t.name}"`,
+                      hideKey: `template:${t.id}`,
+                      commit: () => deleteTemplate.mutateAsync(t.id),
+                    })
+                  }
                   title={`Delete template "${t.name}"`}
                   className="text-xs text-muted hover:text-danger"
                 >

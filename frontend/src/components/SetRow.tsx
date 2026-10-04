@@ -2,6 +2,20 @@ import { useEffect, useRef, useState } from 'react'
 import type { TrackingType, WeightUnit, WorkoutSet } from '../types'
 import { convertWeight } from '../lib/units'
 import { DurationInput } from './DurationInput'
+import { SetTimer } from './SetTimer'
+import { primeBing } from '../lib/bing'
+
+/** Within this many seconds of the planned duration, a stopped timer keeps the planned value. */
+const PLANNED_TOLERANCE_SECONDS = 5
+
+function StopwatchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 2.5M9.5 2.5h5M12 2.5V5" />
+    </svg>
+  )
+}
 
 interface Props {
   set: WorkoutSet
@@ -27,6 +41,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
   const [reps, setReps] = useState(set.reps?.toString() ?? '')
   const [duration, setDuration] = useState(set.duration_seconds?.toString() ?? '')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [timerOpen, setTimerOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Warmup/drop-set toggles and delete are rare compared to marking a set complete --
@@ -76,6 +91,22 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
   const showWeight = trackingType === 'weight_reps' || trackingType === 'bodyweight_reps'
   const showReps = trackingType === 'weight_reps' || trackingType === 'bodyweight_reps'
   const showDuration = trackingType === 'time' || trackingType === 'cardio'
+  const showTimer = trackingType === 'time'
+  // The planned duration is the duration field's value, or its ghost value (the previous
+  // set's duration) when the field is empty.
+  const enteredSeconds = duration.trim() === '' || Number.isNaN(Number(duration)) ? null : Math.round(Number(duration))
+  const plannedSeconds = enteredSeconds ?? previousSet?.duration_seconds ?? null
+
+  const finishTimer = (elapsedSeconds: number) => {
+    const withinPlan =
+      plannedSeconds !== null && Math.abs(elapsedSeconds - plannedSeconds) <= PLANNED_TOLERANCE_SECONDS
+    const value = withinPlan ? plannedSeconds : elapsedSeconds
+    setDuration(value.toString())
+    onChange({ duration_seconds: value })
+    // Completing a set starts its rest timer, so only do it when the set isn't already done.
+    if (!set.completed) onToggleComplete()
+    setTimerOpen(false)
+  }
 
   return (
     <div className={`flex flex-wrap items-center gap-x-1 gap-y-1 rounded-lg py-1.5 ${set.is_warmup ? 'opacity-70' : ''}`}>
@@ -133,6 +164,24 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
       />
 
       <div className="ml-auto flex items-center gap-1">
+        {showTimer && (
+          <button
+            type="button"
+            onClick={() => {
+              // Runs inside the tap, so the bing is allowed to sound later.
+              primeBing()
+              setTimerOpen((open) => !open)
+            }}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border hover:bg-border/40 ${
+              timerOpen ? 'bg-border/40 text-accent' : 'text-muted'
+            }`}
+            title="Start a timer for this set"
+            aria-label="Start timer"
+            aria-expanded={timerOpen}
+          >
+            <StopwatchIcon />
+          </button>
+        )}
         <button
           type="button"
           onClick={onToggleComplete}
@@ -195,6 +244,14 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
           )}
         </div>
       </div>
+
+      {showTimer && timerOpen && (
+        <SetTimer
+          target={plannedSeconds}
+          onStop={finishTimer}
+          onDiscard={() => setTimerOpen(false)}
+        />
+      )}
     </div>
   )
 }

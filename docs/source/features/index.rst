@@ -9,4 +9,5 @@ Features
    templates
    exercise_library
    history_and_analytics
+   strength_score
    bodyweight_and_settings

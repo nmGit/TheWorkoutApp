@@ -77,6 +77,13 @@ cd frontend && npm run dev
 
 Open http://localhost:5173.
 
+Or do the setup and start both dev servers in one go (same setup as
+`setup-everything.sh`, then the API and Vite with live reload; Ctrl+C stops both):
+
+```bash
+./scripts/setup-dev.sh          # add --fresh / --no-pull / etc. as with setup-everything.sh
+```
+
 ## Running in production
 
 ```bash

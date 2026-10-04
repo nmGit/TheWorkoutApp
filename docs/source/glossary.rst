@@ -34,3 +34,12 @@ Glossary
    Drop set
       A set performed immediately after the previous one, at reduced
       weight, with no rest in between.
+
+Entered data
+   Information a user enters: workouts, sets, exercises, notes, body weight. It is
+   the source of truth and can't be regenerated.
+
+Generated data
+   Information derived from entered data, such as strength scores, muscle ratios,
+   baselines, and estimated effort. It's idempotent and can always be regenerated
+   from entered data, so it can be recalculated when the method improves.

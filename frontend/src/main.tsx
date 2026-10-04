@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
 import { RestTimerProvider } from './context/RestTimerContext.tsx'
 import { SettingsProvider } from './context/SettingsContext.tsx'
+import { UndoProvider } from './context/UndoContext.tsx'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -21,9 +22,11 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <SettingsProvider>
         <RestTimerProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
+          <UndoProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </UndoProvider>
         </RestTimerProvider>
       </SettingsProvider>
     </QueryClientProvider>

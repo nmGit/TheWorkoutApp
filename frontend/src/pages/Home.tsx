@@ -1,18 +1,27 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useDashboard } from '../api/stats'
-import { useActiveWorkout, useStartWorkout, useWorkouts } from '../api/workouts'
+import { useActiveWorkout, useStartWorkout, useStrengthHistory, useWorkouts } from '../api/workouts'
 import { useTemplates } from '../api/templates'
 import { useAppSettings } from '../context/SettingsContext'
 import { Button, Card, EmptyState, LoadingState, PageTitle } from '../components/ui'
-import { formatDate, formatWeight } from '../lib/format'
+import { formatDate, formatWeight, formatWorkoutDuration } from '../lib/format'
+import { useUndo } from '../context/UndoContext'
+import { StrengthMapThumb } from '../components/WorkoutMuscles'
+import { StrengthChart } from '../components/StrengthChart'
 
 export function HomePage() {
   const navigate = useNavigate()
-  const { data: activeWorkout } = useActiveWorkout()
+  const { isHidden } = useUndo()
+  const { data: pendingActive } = useActiveWorkout()
+  const activeWorkout = pendingActive && !isHidden(`workout:${pendingActive.id}`) ? pendingActive : undefined
   const { data: dashboard, isLoading } = useDashboard()
-  const { data: recentWorkouts } = useWorkouts({ status: 'completed', limit: 4 })
+  const { data: strengthHistory } = useStrengthHistory()
+  const strengthById = new Map((strengthHistory ?? []).map((p) => [p.workout_id, p]))
+  const { data: rawRecent } = useWorkouts({ status: 'completed', limit: 4 })
+  const recentWorkouts = rawRecent?.filter((w) => !isHidden(`workout:${w.id}`))
   const { data: templates } = useTemplates()
+  const visibleTemplates = templates?.filter((t) => !isHidden(`template:${t.id}`))
   const startWorkout = useStartWorkout()
   const settings = useAppSettings()
   const [showTemplates, setShowTemplates] = useState(false)
@@ -51,7 +60,7 @@ export function HomePage() {
           >
             Start empty workout
           </Button>
-          {templates && templates.length > 0 && (
+          {visibleTemplates && visibleTemplates.length > 0 && (
             <Button
               variant="secondary"
               className="w-full"
@@ -63,7 +72,7 @@ export function HomePage() {
           )}
           {showTemplates && (
             <div className="space-y-1.5 pt-1">
-              {templates?.map((t) => (
+              {visibleTemplates?.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => handleStartFromTemplate(t.id)}
@@ -82,6 +91,13 @@ export function HomePage() {
       {isLoading && <LoadingState />}
 
       <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Strength over time</h2>
+        <Card>
+          <StrengthChart points={strengthHistory ?? []} />
+        </Card>
+      </div>
+
+      <div>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Recent workouts</h2>
         {recentWorkouts && recentWorkouts.length === 0 ? (
           <EmptyState title="No workouts logged yet" hint="Start one above to see it here." />
@@ -92,11 +108,16 @@ export function HomePage() {
                 key={w.id}
                 to={`/history/${w.id}`}
                 title={`View "${w.name}" from ${formatDate(w.started_at)}`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-border/20"
+                className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-border/20"
               >
-                <div>
+                <StrengthMapThumb strength={strengthById.get(w.id)} />
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{w.name}</p>
-                  <p className="text-xs text-muted">{formatDate(w.started_at)}</p>
+                  <p className="text-xs text-muted">
+                    {[formatDate(w.started_at), formatWorkoutDuration(w.started_at, w.completed_at)]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
                 </div>
                 <p className="text-xs text-muted">
                   {w.exercise_count} {w.exercise_count === 1 ? 'exercise' : 'exercises'}

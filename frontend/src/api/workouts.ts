@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Workout, WorkoutExercise, WorkoutSet, WorkoutSummary } from '../types'
+import type { StrengthPoint, Workout, WorkoutExercise, WorkoutSet, WorkoutStrength, WorkoutSummary } from '../types'
 
 export const workoutKeys = {
   all: ['workouts'] as const,
   list: (params: Record<string, string | number | undefined>) => ['workouts', 'list', params] as const,
   active: ['workouts', 'active'] as const,
   detail: (id: number) => ['workouts', 'detail', id] as const,
+  strength: (id: number) => ['workouts', 'strength', id] as const,
 }
 
 export function useActiveWorkout() {
@@ -41,9 +42,30 @@ export function useWorkout(id: number | undefined) {
 }
 
 function invalidateWorkout(qc: ReturnType<typeof useQueryClient>, id?: number) {
-  qc.invalidateQueries({ queryKey: workoutKeys.active })
-  qc.invalidateQueries({ queryKey: ['workouts', 'list'] })
-  if (id !== undefined) qc.invalidateQueries({ queryKey: workoutKeys.detail(id) })
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: workoutKeys.active }),
+    qc.invalidateQueries({ queryKey: ['workouts', 'list'] }),
+    id !== undefined ? qc.invalidateQueries({ queryKey: workoutKeys.detail(id) }) : undefined,
+    // Editing a workout also changes the baselines of every later workout, so every
+    // strength query is stale, not just this one's.
+    qc.invalidateQueries({ queryKey: ['workouts', 'strength'] }),
+    qc.invalidateQueries({ queryKey: ['strength-history'] }),
+  ])
+}
+
+export function useStrengthHistory() {
+  return useQuery({
+    queryKey: ['strength-history'],
+    queryFn: () => api.get<StrengthPoint[]>('/strength/history'),
+  })
+}
+
+export function useWorkoutStrength(id: number | undefined) {
+  return useQuery({
+    queryKey: workoutKeys.strength(id ?? -1),
+    queryFn: () => api.get<WorkoutStrength>(`/workouts/${id}/strength`),
+    enabled: id !== undefined,
+  })
 }
 
 export function useStartWorkout() {
@@ -69,6 +91,15 @@ export function useDeleteWorkout() {
   return useMutation({
     mutationFn: (id: number) => api.delete(`/workouts/${id}`),
     onSuccess: (_data, id) => invalidateWorkout(qc, id),
+  })
+}
+
+export function useUpdateWorkoutExercise(workoutId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workoutExerciseId, notes }: { workoutExerciseId: number; notes: string }) =>
+      api.patch<Workout>(`/workouts/${workoutId}/exercises/${workoutExerciseId}`, { notes }),
+    onSuccess: () => invalidateWorkout(qc, workoutId),
   })
 }
 

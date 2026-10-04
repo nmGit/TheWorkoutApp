@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Equipment, ExerciseTemplate, MuscleGroup, TrackingType, WorkoutSet } from '../types'
+import type { Equipment, ExerciseTemplate, MuscleGroup, MuscleOption, TrackingType, WorkoutSet } from '../types'
 
 const INFINITE_PAGE_SIZE = 60
 
@@ -8,6 +8,7 @@ export interface ExerciseTemplateListParams {
   q?: string
   bodyPart?: string
   muscleGroupId?: number
+  muscle?: string
   equipment?: string
   trackingType?: string
   limit?: number
@@ -21,6 +22,7 @@ export const exerciseTemplateKeys = {
   history: (id: number) => ['exercise-templates', 'history', id] as const,
   facets: ['exercise-templates', 'facets'] as const,
   muscleGroups: ['muscle-groups'] as const,
+  groupMuscles: (groupId: number) => ['muscle-groups', groupId, 'muscles'] as const,
 }
 
 export interface ExerciseTemplateListResult {
@@ -33,6 +35,7 @@ function buildSearchParams(params: ExerciseTemplateListParams): URLSearchParams 
   if (params.q) search.set('q', params.q)
   if (params.bodyPart) search.set('body_part', params.bodyPart)
   if (params.muscleGroupId) search.set('muscle_group_id', String(params.muscleGroupId))
+  if (params.muscle) search.set('muscle', params.muscle)
   if (params.equipment) search.set('equipment', params.equipment)
   if (params.trackingType) search.set('tracking_type', params.trackingType)
   return search
@@ -42,6 +45,15 @@ export function useMuscleGroups() {
   return useQuery({
     queryKey: exerciseTemplateKeys.muscleGroups,
     queryFn: () => api.get<MuscleGroup[]>('/muscle-groups'),
+    staleTime: Infinity,
+  })
+}
+
+export function useGroupMuscles(groupId: number | undefined) {
+  return useQuery({
+    queryKey: exerciseTemplateKeys.groupMuscles(groupId ?? 0),
+    queryFn: () => api.get<MuscleOption[]>(`/muscle-groups/${groupId}/muscles`),
+    enabled: groupId !== undefined,
     staleTime: Infinity,
   })
 }
