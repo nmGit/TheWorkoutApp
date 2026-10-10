@@ -37,7 +37,11 @@ class TemplateExercise(db.Model):
     )
     exercise_id = db.Column(db.Integer, db.ForeignKey("exercise_templates.id"), nullable=False)
     position = db.Column(db.Integer, nullable=False, default=0)
+    # How many sets of each kind the workout starts with. Weights and reps aren't stored here: they
+    # come from the last time this exercise was done.
     target_sets = db.Column(db.Integer, nullable=True)
+    warmup_sets = db.Column(db.Integer, nullable=False, default=0)
+    drop_sets = db.Column(db.Integer, nullable=False, default=0)
     target_reps = db.Column(db.String(32), nullable=True)
     target_weight = db.Column(db.Numeric(8, 4), nullable=True)
 

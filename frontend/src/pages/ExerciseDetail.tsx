@@ -8,7 +8,6 @@ import { ProgressChart } from '../components/ProgressChart'
 import { Badge, Card, LoadingState, PageTitle } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { formatDate, formatDuration, formatWeight, setSummary } from '../lib/format'
-import { regionsFor } from '../lib/muscleMap'
 import type { Muscle } from '@abdofallah/musclemap-js'
 import type { ExerciseTemplate, MuscleSwatch } from '../types'
 
@@ -162,7 +161,7 @@ function BodyMaps({ exercise }: { exercise: ExerciseTemplate }) {
   const openLibraryFor = (region: Muscle) => {
     // Primary muscles come first, so a region shared by a primary and a secondary opens the primary.
     const muscle = [...exercise.primary_muscles, ...exercise.secondary_muscles].find((m) =>
-      regionsFor(m.slug).includes(region),
+      m.regions.includes(region),
     )
     if (!muscle) return
     const params = new URLSearchParams()
@@ -173,8 +172,8 @@ function BodyMaps({ exercise }: { exercise: ExerciseTemplate }) {
 
   return (
     <MuscleMapPair
-      primary={exercise.primary_muscles.map((m) => m.slug)}
-      secondary={exercise.secondary_muscles.map((m) => m.slug)}
+      primary={exercise.primary_muscles.flatMap((m) => m.regions)}
+      secondary={exercise.secondary_muscles.flatMap((m) => m.regions)}
       onRegionClick={openLibraryFor}
       showLabels
     />

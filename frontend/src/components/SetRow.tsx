@@ -36,10 +36,22 @@ function displayWeight(set: WorkoutSet, weightUnit: WeightUnit): string {
   return (Math.round(converted * 100) / 100).toString()
 }
 
+/** The planned weight in the display unit, as ghost text. */
+function plannedWeight(set: WorkoutSet, weightUnit: WeightUnit): string {
+  if (set.planned_weight === null) return ''
+  const converted = convertWeight(set.planned_weight, set.planned_weight_unit, weightUnit)
+  return (Math.round(converted * 100) / 100).toString()
+}
+
 export function SetRow({ set, index, trackingType, weightUnit, previousSet, restGhostSeconds = null, onChange, onToggleComplete, onDelete }: Props) {
   const [weight, setWeight] = useState(() => displayWeight(set, weightUnit))
   const [reps, setReps] = useState(set.reps?.toString() ?? '')
   const [duration, setDuration] = useState(set.duration_seconds?.toString() ?? '')
+  // Planned values show as ghost text (placeholders), so an empty field stays empty until typed in.
+  const plannedWeightText = plannedWeight(set, weightUnit) || (previousSet && displayWeight(previousSet, weightUnit)) || '-'
+  const plannedRepsText = set.planned_reps?.toString() ?? (previousSet?.reps != null ? previousSet.reps.toString() : 'reps')
+  const plannedDurationText =
+    set.planned_duration_seconds?.toString() ?? (previousSet?.duration_seconds != null ? previousSet.duration_seconds.toString() : 'sec')
   const [menuOpen, setMenuOpen] = useState(false)
   const [timerOpen, setTimerOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -95,7 +107,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
   // The planned duration is the duration field's value, or its ghost value (the previous
   // set's duration) when the field is empty.
   const enteredSeconds = duration.trim() === '' || Number.isNaN(Number(duration)) ? null : Math.round(Number(duration))
-  const plannedSeconds = enteredSeconds ?? previousSet?.duration_seconds ?? null
+  const plannedSeconds = enteredSeconds ?? set.planned_duration_seconds ?? previousSet?.duration_seconds ?? null
 
   const finishTimer = (elapsedSeconds: number) => {
     const withinPlan =
@@ -121,7 +133,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
           type="number"
           inputMode="decimal"
           value={weight}
-          placeholder={(previousSet && displayWeight(previousSet, weightUnit)) || '-'}
+          placeholder={plannedWeightText}
           onChange={(e) => setWeight(e.target.value)}
           onBlur={commitWeight}
           className="h-10 w-[52px] rounded-md border border-border bg-bg px-1.5 text-center text-sm tabular-nums placeholder:text-muted"
@@ -134,7 +146,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
           type="number"
           inputMode="numeric"
           value={reps}
-          placeholder={previousSet?.reps != null ? previousSet.reps.toString() : 'reps'}
+          placeholder={plannedRepsText}
           aria-label="reps"
           onChange={(e) => setReps(e.target.value)}
           onBlur={commitReps}
@@ -146,7 +158,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
           type="number"
           inputMode="numeric"
           value={duration}
-          placeholder={previousSet?.duration_seconds != null ? previousSet.duration_seconds.toString() : 'sec'}
+          placeholder={plannedDurationText}
           onChange={(e) => setDuration(e.target.value)}
           onBlur={commitDuration}
           className="h-10 w-20 rounded-md border border-border bg-bg px-2 text-center text-sm tabular-nums placeholder:text-muted"

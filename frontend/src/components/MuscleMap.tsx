@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { MuscleMapWidget, type BodySide, type Muscle } from '@abdofallah/musclemap-js'
-import { regionsFor } from '../lib/muscleMap'
 import type { RegionFill } from '../lib/strengthColors'
 
 export type { RegionFill }
@@ -44,6 +43,7 @@ export function MuscleMap({
       gender: 'male',
       side,
       interactive,
+      showSubGroups: true,
       multiSelect: false,
       onMuscleClick: (region) => onClickRef.current?.(region),
     })
@@ -90,8 +90,9 @@ export function MuscleMapPair({
   interactive = true,
   className = 'h-64 w-full',
 }: {
-  primary: string[]
-  secondary: string[]
+  /** Body regions worked mainly, and incidentally. */
+  primary: Muscle[]
+  secondary: Muscle[]
   fills?: RegionFill[]
   onRegionClick?: (region: Muscle) => void
   showLabels?: boolean
@@ -116,8 +117,8 @@ export function MuscleMapPair({
     return () => observer.disconnect()
   }, [visible])
 
-  const primaryRegions = unique(primary.flatMap(regionsFor))
-  const secondaryRegions = unique(secondary.flatMap(regionsFor)).filter((r) => !primaryRegions.includes(r))
+  const primaryRegions = unique(primary)
+  const secondaryRegions = unique(secondary).filter((r) => !primaryRegions.includes(r))
   const empty = !fills && primaryRegions.length === 0 && secondaryRegions.length === 0
 
   return (

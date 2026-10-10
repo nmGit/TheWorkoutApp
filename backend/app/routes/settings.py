@@ -4,9 +4,10 @@ from flask import Blueprint, jsonify, request
 
 from app.extensions import db
 from app.models.bodyweight import BodyweightEntry
-from app.models.constants import DISTANCE_UNITS, THEMES, WEIGHT_UNITS
+from app.models.constants import DISTANCE_UNITS, EXPERIENCE_LEVELS, PROGRESSION_METHODS, THEMES, WEIGHT_UNITS
 from app.models.settings import UserSettings
 from app.serializers import serialize_bodyweight_entry, serialize_settings
+from app.services.sets_plan import rep_range_or_none
 from app.validation import ApiError, require
 
 bp = Blueprint("settings", __name__, url_prefix="/api")
@@ -36,6 +37,25 @@ def update_settings():
         if body["theme"] not in THEMES:
             raise ApiError(f"theme must be one of {THEMES}")
         settings.theme = body["theme"]
+    if "progression_method" in body:
+        if body["progression_method"] not in PROGRESSION_METHODS:
+            raise ApiError(f"progression_method must be one of {PROGRESSION_METHODS}")
+        settings.progression_method = body["progression_method"]
+    if "experience" in body:
+        if body["experience"] not in EXPERIENCE_LEVELS:
+            raise ApiError(f"experience must be one of {EXPERIENCE_LEVELS}")
+        settings.experience = body["experience"]
+    if "default_rep_range" in body:
+        text = str(body["default_rep_range"] or "").strip()
+        if rep_range_or_none(text) is None:
+            raise ApiError("default_rep_range must look like 8-12 (low end first, at least 1)")
+        settings.default_rep_range = text
+    for key in ("load_step_lb", "load_step_kg"):
+        if key in body:
+            value = body[key]
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 < value <= 100:
+                raise ApiError(f"{key} must be a number above 0 and up to 100")
+            setattr(settings, key, float(value))
 
     db.session.commit()
     return jsonify(serialize_settings(settings))

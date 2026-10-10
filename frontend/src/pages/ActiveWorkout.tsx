@@ -15,10 +15,12 @@ import { useExerciseHistory } from '../api/exerciseTemplates'
 import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
 import { ExercisePicker } from '../components/ExercisePicker'
 import { SetRow } from '../components/SetRow'
-import { Button, Card, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
+import { Button, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { useGlobalRestTimer } from '../context/RestTimerContext'
 import { useDragReorder } from '../hooks/useDragReorder'
+import { ExerciseCard } from '../components/ExerciseCard'
+import { ExerciseList } from '../components/ExerciseList'
 import { formatElapsed } from '../lib/format'
 import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
 import { useUndo } from '../context/UndoContext'
@@ -30,6 +32,7 @@ export function ActiveWorkoutPage() {
   const { data: workout, isLoading } = useActiveWorkout()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [elapsedTick, setElapsedTick] = useState(0)
+  const [finishError, setFinishError] = useState<string | null>(null)
 
   useEffect(() => {
     const id = setInterval(() => setElapsedTick((t) => t + 1), 30_000)
@@ -68,39 +71,46 @@ export function ActiveWorkoutPage() {
   }
 
   const handleFinish = async () => {
-    // Offer to propagate a reordering back to the source template -- but
-    // only when the workout still has exactly the template's exercises,
-    // just in a different order. If exercises were also added/removed
-    // relative to the template, that's a different (and more ambiguous)
-    // kind of drift than "reordered", so it's left alone rather than
-    // guessing at merging membership too.
-    if (template && workout.template_id) {
-      const workoutOrder = workout.exercises.map((we) => we.exercise_id)
-      const templateOrder = template.exercises.map((te) => te.exercise_id)
-      const sameSet = [...workoutOrder].sort().join(',') === [...templateOrder].sort().join(',')
-      const sameOrder = workoutOrder.join(',') === templateOrder.join(',')
-      if (sameSet && !sameOrder) {
-        const propagate = confirm(
-          `Apply this exercise order to "${template.name}" too? Choose Cancel to keep it just for this workout.`,
-        )
-        if (propagate) {
-          const reordered: TemplateExerciseInput[] = workoutOrder.map((exerciseId) => {
-            const te = template.exercises.find((t) => t.exercise_id === exerciseId)!
-            return {
-              exercise_id: te.exercise_id,
-              target_sets: te.target_sets,
-              target_reps: te.target_reps,
-              target_weight: te.target_weight,
-            }
-          })
-          await updateTemplate.mutateAsync({ exercises: reordered })
+    setFinishError(null)
+    try {
+      // Offer to propagate a reordering back to the source template -- but
+      // only when the workout still has exactly the template's exercises,
+      // just in a different order. If exercises were also added/removed
+      // relative to the template, that's a different (and more ambiguous)
+      // kind of drift than "reordered", so it's left alone rather than
+      // guessing at merging membership too.
+      if (template && workout.template_id) {
+        const workoutOrder = workout.exercises.map((we) => we.exercise_id)
+        const templateOrder = template.exercises.map((te) => te.exercise_id)
+        const sameSet = [...workoutOrder].sort().join(',') === [...templateOrder].sort().join(',')
+        const sameOrder = workoutOrder.join(',') === templateOrder.join(',')
+        if (sameSet && !sameOrder) {
+          const propagate = confirm(
+            `Apply this exercise order to "${template.name}" too? Choose Cancel to keep it just for this workout.`,
+          )
+          if (propagate) {
+            const reordered: TemplateExerciseInput[] = workoutOrder.map((exerciseId) => {
+              const te = template.exercises.find((t) => t.exercise_id === exerciseId)!
+              return {
+                exercise_id: te.exercise_id,
+                target_sets: te.target_sets,
+                warmup_sets: te.warmup_sets,
+                drop_sets: te.drop_sets,
+              }
+            })
+            await updateTemplate.mutateAsync({ exercises: reordered })
+          }
         }
       }
-    }
 
-    await updateWorkout.mutateAsync({ finish: true })
-    timer.clear()
-    navigate(`/history/${workout.id}`)
+      await updateWorkout.mutateAsync({ finish: true })
+      timer.clear()
+      navigate(`/history/${workout.id}`)
+    } catch (err) {
+      // The workout is still active -- don't navigate away, and say so, rather than leaving it
+      // looking finished when the save never reached the server.
+      setFinishError(err instanceof Error ? err.message : 'Could not finish the workout.')
+    }
   }
 
   const handleDiscard = () => {
@@ -141,25 +151,32 @@ export function ActiveWorkoutPage() {
         </div>
       </div>
 
+      {finishError && (
+        <p className="text-sm text-danger">
+          {finishError} The workout is still in progress -- try Finish again.
+        </p>
+      )}
+
       <WorkoutMusclesHeader workoutId={workout.id} muscles={workout.muscles} />
 
       {workout.exercises.length === 0 && (
         <EmptyState title="No exercises yet" hint="Add your first exercise to start logging sets." />
       )}
 
-      <div className="space-y-3">
-        {workout.exercises.map((we) =>
+      <ExerciseList
+        items={workout.exercises}
+        dragReorder={dragReorder}
+        renderCard={(we) =>
           isHidden(`workout-exercise:${we.id}`) ? null : (
-            <div key={we.id} ref={dragReorder.getItemRef(we.id)}>
-              <ExerciseBlock
-                workout={workout}
-                workoutExercise={we}
-                handleProps={dragReorder.getHandleProps(we.id)}
-                isDragging={dragReorder.isBeingDragged(we.id)}
-              />
-            </div>
-        ))}
-      </div>
+            <ExerciseBlock
+              workout={workout}
+              workoutExercise={we}
+              handleProps={dragReorder.getHandleProps(we.id)}
+              isDragging={dragReorder.isBeingDragged(we.id)}
+            />
+          )
+        }
+      />
 
       <Button
         variant="secondary"
@@ -267,13 +284,12 @@ function ExerciseBlock({
   }
 
   return (
-    <Card className={isDragging ? 'scale-[1.02] shadow-lg' : ''}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1">
-          <DragHandle handleProps={handleProps} isDragging={isDragging} />
-          <h3 className="min-w-0 truncate font-semibold">{workoutExercise.exercise_name}</h3>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
+    <ExerciseCard
+      dragging={isDragging}
+      title={workoutExercise.exercise_name}
+      leading={<DragHandle handleProps={handleProps} isDragging={isDragging} />}
+      actions={
+        <>
           <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
           <ExerciseNotesMenu onChoose={setEditingNote} />
           <button
@@ -289,16 +305,26 @@ function ExerciseBlock({
           >
             Remove
           </button>
-        </div>
-      </div>
-
-      <ExerciseNotesPanel
-        workoutId={workout.id}
-        workoutExercise={workoutExercise}
-        editing={editingNote}
-        onDone={() => setEditingNote(null)}
-      />
-
+        </>
+      }
+      notes={
+        <ExerciseNotesPanel
+          workoutId={workout.id}
+          workoutExercise={workoutExercise}
+          editing={editingNote}
+          onDone={() => setEditingNote(null)}
+        />
+      }
+      footer={
+        <button
+          onClick={() => addSet.mutate(workoutExercise.id)}
+          title="Add another set, copied from the last one"
+          className="mt-2 w-full rounded-lg border border-dashed border-border py-2 text-sm font-medium text-muted hover:bg-border/20"
+        >
+          + Add set
+        </button>
+      }
+    >
       <div className="space-y-0.5">
         {workoutExercise.sets.map((set, i) =>
           isHidden(`set:${set.id}`) ? null : (
@@ -320,16 +346,9 @@ function ExerciseBlock({
                 })
               }
             />
-        ))}
+          ),
+        )}
       </div>
-
-      <button
-        onClick={() => addSet.mutate(workoutExercise.id)}
-        title="Add another set, copied from the last one"
-        className="mt-2 w-full rounded-lg border border-dashed border-border py-2 text-sm font-medium text-muted hover:bg-border/20"
-      >
-        + Add set
-      </button>
-    </Card>
+    </ExerciseCard>
   )
 }

@@ -10,6 +10,8 @@ from functools import lru_cache
 
 from flask import current_app
 
+from app.services.muscle_regions import regions_for
+
 
 def _num(value):
     return float(value) if value is not None else None
@@ -73,7 +75,15 @@ MUSCLE_SYNONYMS = {
     "traps": "trapezius",
     "glutes": "gluteus_maximus",
     "abs": "rectus_abdominis",
+    "abdominals": "rectus_abdominis",
     "pectorals": "pectoralis_major",
+    "quads": "quadriceps",
+    "lats": "latissimus_dorsi",
+    "delts": "deltoids",
+    "rear_deltoids": "posterior_deltoid",
+    "groin": "adductors",
+    "inner_thighs": "adductors",
+    "shins": "tibialis",
 }
 
 def muscle_display_name(name: str) -> str:
@@ -96,6 +106,7 @@ def muscle_swatch(name: str) -> dict:
         "slug": slug,
         "name": muscle_display_name(slug),
         "image_url": f"/api/muscles/{slug}/image" if has_image else None,
+        "regions": regions_for(slug),
     }
 
 
@@ -151,6 +162,8 @@ def serialize_template_exercise(te):
         "exercise_name": te.exercise.name if te.exercise else None,
         "position": te.position,
         "target_sets": te.target_sets,
+        "warmup_sets": te.warmup_sets,
+        "drop_sets": te.drop_sets,
         "target_reps": te.target_reps,
         "target_weight": _num(te.target_weight),
     }
@@ -173,6 +186,7 @@ def muscle_summary(exercise_templates) -> dict:
         "primary": sorted(primary),
         "secondary": sorted(secondary - primary),
         "groups": sorted(groups, key=lambda name: groups[name]),
+        "regions": sorted({r for slug in primary | secondary for r in regions_for(slug)}),
     }
 
 
@@ -201,6 +215,10 @@ def serialize_set(s):
         "duration_seconds": s.duration_seconds,
         "distance_meters": _num(s.distance_meters),
         "rest_seconds": s.rest_seconds,
+        "planned_weight": _num(s.planned_weight),
+        "planned_weight_unit": s.planned_weight_unit,
+        "planned_reps": s.planned_reps,
+        "planned_duration_seconds": s.planned_duration_seconds,
         "is_warmup": s.is_warmup,
         "is_dropset": s.is_dropset,
         "rpe": _num(s.rpe),
@@ -259,4 +277,9 @@ def serialize_settings(settings):
         "distance_unit": settings.distance_unit,
         "default_rest_seconds": settings.default_rest_seconds,
         "theme": settings.theme,
+        "progression_method": settings.progression_method,
+        "experience": settings.experience,
+        "load_step_lb": settings.load_step_lb,
+        "load_step_kg": settings.load_step_kg,
+        "default_rep_range": settings.default_rep_range,
     }

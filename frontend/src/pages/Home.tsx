@@ -9,6 +9,8 @@ import { formatDate, formatWeight, formatWorkoutDuration } from '../lib/format'
 import { useUndo } from '../context/UndoContext'
 import { StrengthMapThumb } from '../components/WorkoutMuscles'
 import { StrengthChart } from '../components/StrengthChart'
+import { RecencyCard } from '../components/RecencyCard'
+import { GenerateWorkout } from '../components/GenerateWorkout'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -70,6 +72,7 @@ export function HomePage() {
               Start from template
             </Button>
           )}
+          <GenerateWorkout />
           {showTemplates && (
             <div className="space-y-1.5 pt-1">
               {visibleTemplates?.map((t) => (
@@ -89,6 +92,11 @@ export function HomePage() {
       )}
 
       {isLoading && <LoadingState />}
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Muscle recency</h2>
+        <RecencyCard />
+      </div>
 
       <div>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Strength over time</h2>

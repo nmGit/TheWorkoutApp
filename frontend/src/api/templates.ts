@@ -25,8 +25,9 @@ export function useTemplate(id: number | undefined) {
 export interface TemplateExerciseInput {
   exercise_id: number
   target_sets?: number | null
+  warmup_sets?: number
+  drop_sets?: number
   target_reps?: string | null
-  target_weight?: number | null
 }
 
 export function useCreateTemplate() {

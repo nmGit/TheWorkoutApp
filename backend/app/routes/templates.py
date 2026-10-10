@@ -30,6 +30,8 @@ def _apply_exercises(template: WorkoutTemplate, exercises: list[dict]):
                 exercise_id=item["exercise_id"],
                 position=position,
                 target_sets=item.get("target_sets"),
+                warmup_sets=item.get("warmup_sets") or 0,
+                drop_sets=item.get("drop_sets") or 0,
                 target_reps=item.get("target_reps"),
                 target_weight=item.get("target_weight"),
             )

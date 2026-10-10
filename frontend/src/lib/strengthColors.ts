@@ -1,17 +1,16 @@
 import type { Muscle } from '@abdofallah/musclemap-js'
-import { regionsFor } from './muscleMap'
 import type { MuscleSummary, WorkoutStrength } from '../types'
 
 /**
- * Every region we colour. Each gets a fill, so regions with no data show grey.
- * Excluded: the hidden sub-groups (see lib/muscleMap.ts), and head and knees, which
- * the widget draws in their own colours and which would be dimmed by a fill.
+ * Every region we colour. Each gets a fill, so regions with no data show grey. Head and knees are
+ * left out: the widget draws them in their own colours, and a fill would dim them.
  */
 export const ALL_REGIONS: Muscle[] = [
   'abs', 'biceps', 'calves', 'chest', 'deltoids', 'feet', 'forearm', 'gluteal', 'hamstring',
   'hands', 'lower-back', 'obliques', 'quadriceps', 'tibialis', 'trapezius', 'triceps',
   'upper-back', 'rotator-cuff', 'serratus', 'rhomboids',
-  // Always-visible sub-groups, so the widget draws them even with sub-groups hidden.
+  // Sub-regions, drawn because the widget shows sub-groups.
+  'front-deltoid', 'rear-deltoid', 'upper-chest', 'hip-flexors', 'upper-trapezius',
   'ankles', 'adductors', 'neck',
 ]
 
@@ -45,13 +44,12 @@ export function strengthColor(ratio: number): string {
 }
 
 /** One fill per region. A region worked by several muscles averages their scored
- * ratios (geometric mean). It's blue only when planned but not yet worked: a region
- * with any counting set this workout, even one without a baseline yet, is not blue.
- * Otherwise it's grey. */
+ * ratios (geometric mean). A region that was worked or planned but has no score yet is
+ * blue. A region nothing in the workout touches is grey. */
 export function strengthFills(strength: WorkoutStrength | undefined): RegionFill[] {
   const byRegion = new Map<Muscle, { ratios: number[]; pending: boolean; worked: boolean }>()
-  for (const [slug, m] of Object.entries(strength?.muscles ?? {})) {
-    for (const region of regionsFor(slug)) {
+  for (const m of Object.values(strength?.muscles ?? {})) {
+    for (const region of m.regions) {
       const entry = byRegion.get(region) ?? { ratios: [], pending: false, worked: false }
       if (m.status === 'scored' && m.ratio !== null) entry.ratios.push(m.ratio)
       if (m.status === 'pending') entry.pending = true
@@ -59,27 +57,40 @@ export function strengthFills(strength: WorkoutStrength | undefined): RegionFill
       byRegion.set(region, entry)
     }
   }
-  return ALL_REGIONS.map((region) => {
+  return withSubRegions(ALL_REGIONS.map((region) => {
     const entry = byRegion.get(region)
     if (entry && entry.ratios.length > 0) {
       const geometric = Math.exp(entry.ratios.reduce((sum, r) => sum + Math.log(r), 0) / entry.ratios.length)
-      return { region, color: strengthColor(geometric), opacity: DATA_OPACITY }
+      return { region, color: strengthColor(geometric), opacity: DATA_OPACITY, hasData: true }
     }
-    if (entry?.pending && !entry.worked) return { region, color: COLORS.pending, opacity: DATA_OPACITY }
-    return { region, color: COLORS.noData, opacity: NO_DATA_OPACITY }
-  })
+    // Worked or planned but not scored yet: blue, so the workout still shows its muscles.
+    if (entry && (entry.worked || entry.pending)) return { region, color: COLORS.pending, opacity: DATA_OPACITY, hasData: true }
+    return { region, color: COLORS.noData, opacity: NO_DATA_OPACITY, hasData: false }
+  }))
 }
 
 /** Fills for a template with no completed instance yet: every region it works is pure
  * blue (planned, not done), and the rest is grey. */
 export function templateFills(muscles: MuscleSummary): RegionFill[] {
-  const planned = new Set<Muscle>()
-  for (const slug of [...muscles.primary, ...muscles.secondary]) {
-    for (const region of regionsFor(slug)) planned.add(region)
-  }
-  return ALL_REGIONS.map((region) =>
+  const planned = new Set<Muscle>(muscles.regions)
+  return withSubRegions(ALL_REGIONS.map((region) =>
     planned.has(region)
-      ? { region, color: COLORS.pending, opacity: DATA_OPACITY }
-      : { region, color: COLORS.noData, opacity: NO_DATA_OPACITY },
-  )
+      ? { region, color: COLORS.pending, opacity: DATA_OPACITY, hasData: true }
+      : { region, color: COLORS.noData, opacity: NO_DATA_OPACITY, hasData: false },
+  ))
+}
+
+/** Sub-regions of the diagram (upper chest, rear deltoid, upper abs, ...). The widget draws them over
+ * their parent region, so one without data must not get a fill of its own: it inherits its parent's
+ * colour instead. */
+export const SUB_REGIONS = new Set<string>([
+  'ankles', 'adductors', 'neck', 'hip-flexors', 'upper-chest', 'lower-chest', 'inner-quad', 'outer-quad',
+  'upper-abs', 'lower-abs', 'front-deltoid', 'rear-deltoid', 'upper-trapezius', 'lower-trapezius',
+])
+
+/** Drop the fills of sub-regions that have no data, and strip the bookkeeping flag. */
+export function withSubRegions(fills: (RegionFill & { hasData: boolean })[]): RegionFill[] {
+  return fills
+    .filter((f) => f.hasData || !SUB_REGIONS.has(f.region))
+    .map(({ region, color, opacity }) => ({ region, color, opacity }))
 }

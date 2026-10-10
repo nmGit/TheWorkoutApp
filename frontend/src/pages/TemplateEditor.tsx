@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useStrengthHistory } from '../api/workouts'
 import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
+import { ExerciseCard } from '../components/ExerciseCard'
+import { ExerciseList } from '../components/ExerciseList'
 import { ExercisePicker } from '../components/ExercisePicker'
-import { Button, Card, DragHandle, LoadingState, PageTitle } from '../components/ui'
+import { PlanSets } from '../components/PlanSets'
+import { TemplateMusclesHeader } from '../components/WorkoutMuscles'
+import { Button, DragHandle, LoadingState, PageTitle, ViewExerciseButton } from '../components/ui'
+import { useUndo } from '../context/UndoContext'
 import { useDragReorder } from '../hooks/useDragReorder'
 import type { ExerciseTemplate, TemplateExercise } from '../types'
-import { useUndo } from '../context/UndoContext'
 
 export function TemplateEditorPage() {
   const { id } = useParams()
@@ -13,10 +18,18 @@ export function TemplateEditorPage() {
   const templateId = Number(id)
   const { data: template, isLoading } = useTemplate(templateId)
   const updateTemplate = useUpdateTemplate(templateId)
+  const { data: history } = useStrengthHistory()
+  const { showUndo } = useUndo()
 
   const [name, setName] = useState('')
   const [exercises, setExercises] = useState<TemplateExercise[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // History is oldest first, so the last point for this template is its latest completed workout.
+  const latest = useMemo(
+    () => (history ?? []).filter((p) => p.template_id === templateId).at(-1),
+    [history, templateId],
+  )
 
   useEffect(() => {
     if (template) {
@@ -27,23 +40,23 @@ export function TemplateEditorPage() {
 
   const persist = (next: TemplateExercise[]) => {
     setExercises(next)
+    // The plan is the set counts and the rep range. Weights come from the last session and progress from it.
     const payload: TemplateExerciseInput[] = next.map((e) => ({
       exercise_id: e.exercise_id,
       target_sets: e.target_sets,
+      warmup_sets: e.warmup_sets,
+      drop_sets: e.drop_sets,
       target_reps: e.target_reps,
-      target_weight: e.target_weight,
     }))
     updateTemplate.mutate({ exercises: payload })
   }
 
   const dragReorder = useDragReorder(exercises, (ex) => ex.id, persist)
-  const { showUndo } = useUndo()
 
   if (isLoading || !template) return <LoadingState />
 
   const updateExercise = (index: number, patch: Partial<TemplateExercise>) => {
-    const next = exercises.map((e, i) => (i === index ? { ...e, ...patch } : e))
-    persist(next)
+    persist(exercises.map((e, i) => (i === index ? { ...e, ...patch } : e)))
   }
 
   const removeExercise = (index: number) => {
@@ -64,6 +77,8 @@ export function TemplateEditorPage() {
         exercise_name: exercise.name,
         position: exercises.length,
         target_sets: 3,
+        warmup_sets: 0,
+        drop_sets: 0,
         target_reps: null,
         target_weight: null,
       },
@@ -91,71 +106,40 @@ export function TemplateEditorPage() {
         placeholder="Template name"
       />
 
-      <div className="space-y-2">
-        {exercises.map((ex, i) => (
-          <div key={ex.id} ref={dragReorder.getItemRef(ex.id)}>
-            <Card className={`space-y-2 ${dragReorder.isBeingDragged(ex.id) ? 'scale-[1.02] shadow-lg' : ''}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex min-w-0 items-center gap-1">
-                  <DragHandle handleProps={dragReorder.getHandleProps(ex.id)} isDragging={dragReorder.isBeingDragged(ex.id)} />
-                  <p className="min-w-0 truncate font-medium">{ex.exercise_name}</p>
-                </div>
+      <TemplateMusclesHeader muscles={template.muscles} latest={latest} />
+
+      <ExerciseList
+        items={exercises}
+        dragReorder={dragReorder}
+        className="space-y-2"
+        renderCard={(ex, i) => (
+          <ExerciseCard
+            title={ex.exercise_name}
+            dragging={dragReorder.isBeingDragged(ex.id)}
+            leading={<DragHandle handleProps={dragReorder.getHandleProps(ex.id)} isDragging={dragReorder.isBeingDragged(ex.id)} />}
+            actions={
+              <>
+                <ViewExerciseButton exerciseId={ex.exercise_id} />
                 <button
                   onClick={() => removeExercise(i)}
                   title={`Remove ${ex.exercise_name} from this template`}
-                  className="ml-2 shrink-0 text-xs text-muted hover:text-danger"
+                  className="ml-1 px-1 text-xs text-muted hover:text-danger"
                 >
                   Remove
                 </button>
-              </div>
-              <div className="flex gap-2">
-                <LabeledInput
-                  label="Sets"
-                  value={ex.target_sets?.toString() ?? ''}
-                  onCommit={(v) => updateExercise(i, { target_sets: v === '' ? null : Number(v) })}
-                />
-                <LabeledInput
-                  label="Reps"
-                  value={ex.target_reps ?? ''}
-                  onCommit={(v) => updateExercise(i, { target_reps: v || null })}
-                />
-                <LabeledInput
-                  label="Weight"
-                  value={ex.target_weight?.toString() ?? ''}
-                  onCommit={(v) => updateExercise(i, { target_weight: v === '' ? null : Number(v) })}
-                />
-              </div>
-            </Card>
-          </div>
-        ))}
-      </div>
+              </>
+            }
+          >
+            <PlanSets exercise={ex} onChange={(patch) => updateExercise(i, patch)} />
+          </ExerciseCard>
+        )}
+      />
 
-      <Button
-        variant="secondary"
-        className="w-full"
-        onClick={() => setPickerOpen(true)}
-        title="Add an exercise to this template"
-      >
+      <Button variant="secondary" className="w-full" onClick={() => setPickerOpen(true)} title="Add an exercise to this template">
         + Add exercise
       </Button>
 
       {pickerOpen && <ExercisePicker onClose={() => setPickerOpen(false)} onSelect={addExercise} />}
     </div>
-  )
-}
-
-function LabeledInput({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string) => void }) {
-  const [local, setLocal] = useState(value)
-  useEffect(() => setLocal(value), [value])
-  return (
-    <label className="flex-1 text-xs text-muted">
-      {label}
-      <input
-        value={local}
-        onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => onCommit(local)}
-        className="mt-0.5 h-9 w-full rounded-md border border-border bg-bg px-2 text-sm text-fg"
-      />
-    </label>
   )
 }

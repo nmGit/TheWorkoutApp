@@ -11,6 +11,7 @@ from app.models.template import WorkoutTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import serialize_set, serialize_workout
 from app.services.dates import local_midnight_utc
+from app.services.sets_plan import plan_sets
 from app.services.generated_v2 import score_series_v2, strength_for_workout
 from app.services.strength import completed_workouts
 from app.validation import ApiError
@@ -135,15 +136,18 @@ def start_workout():
             )
             db.session.add(we)
             db.session.flush()
-            for i in range(te.target_sets or 1):
+            for position, planned in enumerate(plan_sets(te)):
                 db.session.add(
                     WorkoutSet(
                         workout_exercise_id=we.id,
-                        position=i,
-                        weight=te.target_weight,
-                        weight_unit=settings.weight_unit if te.target_weight is not None else None,
-                        reps=_parse_target_reps(te.target_reps),
+                        position=position,
                         completed=False,
+                        is_warmup=planned["is_warmup"],
+                        is_dropset=planned["is_dropset"],
+                        planned_weight=planned["weight"],
+                        planned_weight_unit=planned["weight_unit"],
+                        planned_reps=planned["reps"],
+                        planned_duration_seconds=planned["duration_seconds"],
                     )
                 )
     else:
@@ -195,6 +199,47 @@ def delete_workout(workout_id):
     db.session.delete(workout)
     db.session.commit()
     return "", 204
+
+
+@bp.get("/workouts/generate/groups")
+def generate_groups():
+    """The training groups in order of need, for the generate panel."""
+    from datetime import date
+
+    from app.services.generate import group_ranking
+
+    return jsonify(group_ranking(date.today()))
+
+
+@bp.post("/workouts/generated")
+def create_generated():
+    """A workout built from the muscles that are most overdue (see services/generate.py)."""
+    from datetime import date
+
+    from app.services.generate import create_generated_workout, plan
+
+    body = request.get_json(silent=True) or {}
+    count = body.get("count", 4)
+    if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= 10:
+        raise ApiError("count must be a whole number from 1 to 10")
+    if Workout.query.filter(Workout.completed_at.is_(None)).first() is not None:
+        raise ApiError("A workout is already active", 409)
+    familiar_first = body.get("familiar_first", True)
+    groups = body.get("groups")
+    if groups is not None and (not isinstance(groups, list) or not all(isinstance(g, str) for g in groups)):
+        raise ApiError("groups must be a list of group names")
+    chosen = plan(
+        count,
+        bool(body.get("stretching")),
+        bool(body.get("cardio")),
+        date.today(),
+        familiar_first=bool(familiar_first),
+        groups=groups,
+    )
+    if not chosen:
+        raise ApiError("No exercises with history to build a workout from yet", 409)
+    workout = create_generated_workout(chosen)
+    return jsonify(serialize_workout(workout)), 201
 
 
 @bp.post("/workouts/<int:workout_id>/exercises")
@@ -303,6 +348,7 @@ def update_set(set_id):
     if s is None:
         raise ApiError("Set not found", 404)
     body = request.get_json(force=True) or {}
+    was_completed = s.completed
 
     for field in (
         "weight",
@@ -318,6 +364,16 @@ def update_set(set_id):
     ):
         if field in body:
             setattr(s, field, body[field])
+
+    if s.completed and not was_completed:
+        # Completing a set makes its planned values real, for any field left empty.
+        if s.weight is None and s.planned_weight is not None:
+            s.weight, s.weight_unit = s.planned_weight, s.planned_weight_unit
+        if s.reps is None:
+            s.reps = s.planned_reps
+        if s.duration_seconds is None:
+            s.duration_seconds = s.planned_duration_seconds
+        s.planned_weight = s.planned_weight_unit = s.planned_reps = s.planned_duration_seconds = None
 
     db.session.commit()
     return jsonify(serialize_set(s))

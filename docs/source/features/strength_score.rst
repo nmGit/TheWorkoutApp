@@ -13,7 +13,7 @@ This section describes the method the app uses now (``services/generated_v2.py``
 The sections after it describe the previous method, kept for comparison.
 
 - **Each exercise has its own baseline**, built only from its sessions in the last
-  90 days, weighted by 0.5 ** (days ago / 21). Exercises are never pooled, so swapping
+  180 days, weighted by 0.5 ** (days ago / 21). Exercises are never pooled, so swapping
   exercises doesn't move a muscle's score on its own. A baseline needs three sessions
   in the window; otherwise the exercise has no baseline yet.
 - **Each exercise's session value** is the mean of its best three counting sets
@@ -34,8 +34,10 @@ The sections after it describe the previous method, kept for comparison.
   are kept as generated data but aren't used in the score yet.
 - **Counting sets** have 1–15 reps. Sets from 1 to 8 reps count fully, and sets above
   8 count less, falling to half weight at 15.
-- A muscle that is worked but has no scored exercise yet shows as "no baseline"
-  (grey). A planned muscle that hasn't been worked shows as "pending" (blue).
+- A muscle that is worked but has no scored exercise yet shows as "no baseline", and
+  a planned muscle that hasn't been worked yet shows as "pending". Both are blue on
+  the body map, so a workout still shows the muscles it covers. Muscles the workout
+  doesn't touch are grey.
 
 Previous method (for comparison)
 --------------------------------

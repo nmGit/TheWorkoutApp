@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useWorkoutStrength } from '../api/workouts'
 import type { MuscleSummary, WorkoutStrength } from '../types'
-import { COLORS, SATURATION, strengthFills, templateFills } from '../lib/strengthColors'
+import { COLORS, SATURATION, strengthFills, templateFills, type RegionFill } from '../lib/strengthColors'
 import { MuscleMapPair } from './MuscleMap'
 
 /** A small front-and-back map for a completed workout card, coloured by its strength. */
@@ -17,39 +17,76 @@ export function TemplateMapThumb({ muscles, latest }: { muscles: MuscleSummary; 
   return <MuscleMapPair primary={[]} secondary={[]} fills={fills} interactive={false} className="h-24 w-24 shrink-0" />
 }
 
-/** The muscle groups a workout covers, its strength against your usual, and a body map
- * coloured by strength, for the top of a workout view. */
-export function WorkoutMusclesHeader({ workoutId, muscles }: { workoutId: number; muscles: MuscleSummary }) {
-  const { data: strength } = useWorkoutStrength(workoutId)
-  const fills = useMemo(() => strengthFills(strength), [strength])
-  const hasMuscles = muscles.primary.length > 0 || muscles.secondary.length > 0
-  if (!hasMuscles) return null
-
+/** The header shared by workouts and templates: the muscle groups, a line about strength, a
+ * legend, and the body map with the given colours. */
+export function MuscleHeader({
+  groups,
+  summary,
+  fills,
+}: {
+  groups: string[]
+  summary: ReactNode
+  fills: RegionFill[]
+}) {
   return (
     <div className="space-y-2">
-      {muscles.groups.length > 0 && (
+      {groups.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {muscles.groups.map((group) => (
+          {groups.map((group) => (
             <span key={group} className="rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-medium text-accent">
               {group}
             </span>
           ))}
         </div>
       )}
-      <StrengthSummaryLine
-        score={strength?.score ?? null}
-        scoredMuscles={Object.values(strength?.muscles ?? {}).filter((m) => m.status === 'scored').length}
-      />
+      {summary}
       <StrengthLegend />
-      <MuscleMapPair
-        primary={[]}
-        secondary={[]}
-        fills={fills}
-        showLabels
-        interactive={false}
-        className="h-56 w-full"
-      />
+      <MuscleMapPair primary={[]} secondary={[]} fills={fills} showLabels interactive={false} className="h-56 w-full" />
     </div>
+  )
+}
+
+/** A workout's muscles, coloured by its strength against your usual. */
+export function WorkoutMusclesHeader({ workoutId, muscles }: { workoutId: number; muscles: MuscleSummary }) {
+  const { data: strength } = useWorkoutStrength(workoutId)
+  const fills = useMemo(() => strengthFills(strength), [strength])
+  const hasMuscles = muscles.primary.length > 0 || muscles.secondary.length > 0
+  if (!hasMuscles) return null
+  return (
+    <MuscleHeader
+      groups={muscles.groups}
+      fills={fills}
+      summary={
+        <StrengthSummaryLine
+          score={strength?.score ?? null}
+          scoredMuscles={Object.values(strength?.muscles ?? {}).filter((m) => m.status === 'scored').length}
+        />
+      }
+    />
+  )
+}
+
+/** A template's muscles: coloured by its most recent completed workout when it has one, and pure
+ * blue (planned, not done) when it doesn't. */
+export function TemplateMusclesHeader({ muscles, latest }: { muscles: MuscleSummary; latest?: WorkoutStrength }) {
+  const fills = useMemo(() => (latest ? strengthFills(latest) : templateFills(muscles)), [latest, muscles])
+  const hasMuscles = muscles.primary.length > 0 || muscles.secondary.length > 0
+  if (!hasMuscles) return null
+  return (
+    <MuscleHeader
+      groups={muscles.groups}
+      fills={fills}
+      summary={
+        latest ? (
+          <StrengthSummaryLine
+            score={latest.score}
+            scoredMuscles={Object.values(latest.muscles).filter((m) => m.status === 'scored').length}
+          />
+        ) : (
+          <p className="text-xs text-muted">Not done yet: the muscles it will work are blue.</p>
+        )
+      }
+    />
   )
 }
 
@@ -92,7 +129,7 @@ function StrengthLegend() {
       </span>
       <span className="flex items-center gap-1">
         <span className="h-2.5 w-2.5 rounded-sm" style={{ background: COLORS.pending }} />
-        Not done yet
+        Worked, no score yet
       </span>
       <span className="flex items-center gap-1">
         <span className="h-2.5 w-2.5 rounded-sm" style={{ background: COLORS.noData }} />

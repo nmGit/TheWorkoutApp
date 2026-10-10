@@ -30,12 +30,13 @@ from app.services.strength import (
     history_before,
     muscle_shares,
 )
+from app.services.muscle_regions import regions_for
 from app.services.units import convert_weight
 
 TOP_SETS = 3
 MAX_REPS = 15
 FULL_WEIGHT_REPS = 8
-WINDOW_DAYS = 90
+WINDOW_DAYS = 180
 HALF_LIFE_DAYS = 21
 OUTLIER_RATIO = 1.6
 SHRINKAGE = 1.0  # acts like one set of "no change"
@@ -184,6 +185,8 @@ class V2Series:
             muscles[slug] = {"status": "no_baseline", "ratio": None, "evidence": 0.0}
         for slug in _planned_muscles(workout) - worked:
             muscles[slug] = {"status": "pending", "ratio": None, "evidence": 0.0}
+        for slug, entry in muscles.items():
+            entry["regions"] = regions_for(slug)
 
         scored = [m["ratio"] for m in muscles.values() if m["status"] == "scored"]
         score = None

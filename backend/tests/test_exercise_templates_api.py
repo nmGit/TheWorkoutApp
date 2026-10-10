@@ -269,18 +269,18 @@ def test_muscle_swatches_link_an_image_only_when_repdb_has_one(client, app, data
             mechanic="compound",
         ).id
     detail = client.get(f"/api/exercise-templates/{template_id}").get_json()
-    # The legacy "pectorals" is the same muscle as RepDB's pectoralis_major, so both
-    # resolve to one canonical slug (and one diagram).
+    # The legacy "pectorals" is the same muscle as the primary pectoralis_major, so it isn't
+    # listed twice. "Upper Back" is a separate muscle.
     assert detail["primary_muscles"] == [
         {
             "slug": "pectoralis_major",
             "name": "Pectoralis Major",
             "image_url": "/api/muscles/pectoralis_major/image",
+            "regions": ["chest"],
         }
     ]
     assert detail["secondary_muscles"] == [
-        {"slug": "pectoralis_major", "name": "Pectoralis Major", "image_url": "/api/muscles/pectoralis_major/image"},
-        {"slug": "upper_back", "name": "Upper Back", "image_url": None},
+        {"slug": "upper_back", "name": "Upper Back", "image_url": None, "regions": ["upper-back"]},
     ]
     assert detail["tips"] == ["Keep your feet flat."]
     assert (detail["difficulty"], detail["mechanic"]) == ("beginner", "compound")

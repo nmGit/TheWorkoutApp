@@ -79,13 +79,15 @@ def test_finish_drops_incomplete_sets(client, bench_press):
     assert body["exercises"][0]["sets"] == []
 
 
-def test_start_from_template(client, bench_press):
+def test_start_from_template_makes_the_planned_sets(client, bench_press):
+    """The template sets how many sets of each kind start the workout. With no earlier session,
+    the values are empty."""
     template = client.post(
         "/api/templates",
         json={
             "name": "Push Day",
             "exercises": [
-                {"exercise_id": bench_press.id, "target_sets": 3, "target_reps": "8", "target_weight": 135}
+                {"exercise_id": bench_press.id, "target_sets": 3, "warmup_sets": 1, "drop_sets": 1}
             ],
         },
     ).get_json()
@@ -95,26 +97,31 @@ def test_start_from_template(client, bench_press):
     workout = resp.get_json()
     assert workout["name"] == "Push Day"
     sets = workout["exercises"][0]["sets"]
-    assert len(sets) == 3
-    assert all(s["reps"] == 8 and s["weight"] == 135 and s["completed"] is False for s in sets)
+    assert [(s["is_warmup"], s["is_dropset"]) for s in sets] == [
+        (True, False), (False, False), (False, False), (False, False), (False, True),
+    ]
+    assert all(s["weight"] is None and s["reps"] is None and s["completed"] is False for s in sets)
 
 
-def test_start_from_template_with_rep_range(client, bench_press):
-    # target_reps is free-form to allow ranges (see data_model.rst); a range
-    # should still pre-fill something rather than silently leaving reps blank.
+def test_start_from_template_copies_values_from_the_last_session(client, bench_press):
+    """Weight and reps come from the last completed session of the exercise, not the template."""
     template = client.post(
         "/api/templates",
-        json={
-            "name": "Push Day",
-            "exercises": [
-                {"exercise_id": bench_press.id, "target_sets": 2, "target_reps": "8-12", "target_weight": 135}
-            ],
-        },
+        json={"name": "Push Day", "exercises": [{"exercise_id": bench_press.id, "target_sets": 3}]},
     ).get_json()
+
+    earlier = client.post("/api/workouts", json={}).get_json()
+    we = client.post(f"/api/workouts/{earlier['id']}/exercises", json={"exercise_id": bench_press.id}).get_json()
+    we_id = we["exercises"][0]["id"]
+    set_id = client.post(f"/api/workout-exercises/{we_id}/sets", json={}).get_json()["id"]
+    client.patch(f"/api/sets/{set_id}", json={"weight": 135, "weight_unit": "lbs", "reps": 8, "completed": True})
+    client.patch(f"/api/workouts/{earlier['id']}", json={"finish": True})
 
     workout = client.post("/api/workouts", json={"template_id": template["id"]}).get_json()
     sets = workout["exercises"][0]["sets"]
-    assert all(s["reps"] == 8 for s in sets)
+    assert len(sets) == 3
+    # Double progression with the default 8-12 range: 8 reps is below the top, so add a rep.
+    assert all(s["weight"] is None and s["planned_weight"] == 135 and s["planned_reps"] == 9 for s in sets)
 
 
 def test_list_workouts_date_range(client, bench_press):
@@ -332,3 +339,100 @@ def test_reorder_workout_exercises_rejects_malformed_body(client, bench_press):
         f"/api/workouts/{workout['id']}/exercises/reorder", json={"exercise_ids": "nope"}
     )
     assert resp.status_code == 400
+
+
+def _finished_session(client, exercise_id, sets):
+    """A completed workout of one exercise with the given (weight, reps) sets, in lb."""
+    earlier = client.post("/api/workouts", json={}).get_json()
+    we = client.post(f"/api/workouts/{earlier['id']}/exercises", json={"exercise_id": exercise_id}).get_json()
+    we_id = we["exercises"][0]["id"]
+    for weight, reps in sets:
+        set_id = client.post(f"/api/workout-exercises/{we_id}/sets", json={}).get_json()["id"]
+        client.patch(f"/api/sets/{set_id}", json={"weight": weight, "weight_unit": "lbs", "reps": reps, "completed": True})
+    client.patch(f"/api/workouts/{earlier['id']}", json={"finish": True})
+
+
+def _template_with(client, exercise_id, **fields):
+    body = {"exercise_id": exercise_id, "target_sets": 2, **fields}
+    return client.post("/api/templates", json={"name": "T", "exercises": [body]}).get_json()["id"]
+
+
+def test_double_progression_adds_load_once_the_top_of_the_range_is_reached(client, bench_press):
+    _finished_session(client, bench_press.id, [(135, 8), (135, 8)])
+    tid = _template_with(client, bench_press.id, target_reps="6-8")
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(140, 6), (140, 6)]
+
+
+def test_double_progression_repeats_the_load_and_adds_a_rep_below_the_top(client, bench_press):
+    _finished_session(client, bench_press.id, [(135, 6), (135, 6)])
+    tid = _template_with(client, bench_press.id, target_reps="6-8")
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(135, 7), (135, 7)]
+
+
+def test_warm_ups_do_not_count_toward_progression(client, bench_press):
+    _finished_session(client, bench_press.id, [(95, 8), (135, 6), (135, 6)])
+    tid = _template_with(client, bench_press.id, target_reps="6-8")
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(135, 7), (135, 7)]
+
+
+def test_progression_off_copies_the_last_session(client, bench_press):
+    client.patch("/api/settings", json={"progression_method": "off"})
+    _finished_session(client, bench_press.id, [(135, 6), (135, 6)])
+    tid = _template_with(client, bench_press.id, target_reps="6-8")
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(135, 6), (135, 6)]
+
+
+def test_linear_progression_adds_load_when_the_target_is_hit(client, bench_press):
+    client.patch("/api/settings", json={"progression_method": "linear"})
+    _finished_session(client, bench_press.id, [(135, 8), (135, 8)])
+    tid = _template_with(client, bench_press.id, target_reps="6-8")
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(140, 8), (140, 8)]
+
+
+def test_progression_settings_are_validated(client):
+    assert client.patch("/api/settings", json={"progression_method": "bogus"}).status_code == 400
+    assert client.patch("/api/settings", json={"experience": "pro"}).status_code == 400
+    assert client.patch("/api/settings", json={"load_step_lb": 0}).status_code == 400
+    body = client.patch("/api/settings", json={"load_step_kg": 2}).get_json()
+    assert body["load_step_kg"] == 2.0
+
+
+def test_default_rep_range_applies_when_the_exercise_has_none(client, bench_press):
+    client.patch("/api/settings", json={"default_rep_range": "6-8"})
+    _finished_session(client, bench_press.id, [(135, 6), (135, 6)])
+    tid = _template_with(client, bench_press.id)
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    # 6 reps is the bottom of 6-8, so the load stays and a rep is added.
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(135, 7), (135, 7)]
+
+
+def test_exercise_rep_range_overrides_the_default(client, bench_press):
+    client.patch("/api/settings", json={"default_rep_range": "6-8"})
+    _finished_session(client, bench_press.id, [(135, 8), (135, 8)])
+    tid = _template_with(client, bench_press.id, target_reps="8-10")
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    # 8 is below the top of 8-10, so the load stays and a rep is added.
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(135, 9), (135, 9)]
+
+
+def test_default_rep_range_is_validated(client):
+    assert client.patch("/api/settings", json={"default_rep_range": "banana"}).status_code == 400
+    assert client.patch("/api/settings", json={"default_rep_range": "12-6"}).status_code == 400
+    body = client.patch("/api/settings", json={"default_rep_range": " 6 - 8 "}).get_json()
+    assert body["default_rep_range"] == "6 - 8"
+
+
+def test_completing_a_planned_set_makes_its_planned_values_real(client, bench_press):
+    _finished_session(client, bench_press.id, [(135, 8), (135, 8)])
+    tid = _template_with(client, bench_press.id, target_reps="8-10")
+    first = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"][0]
+    # Typing a weight keeps the planned reps as ghost text; completing copies the planned reps in.
+    client.patch(f"/api/sets/{first['id']}", json={"weight": 140, "weight_unit": "lbs"})
+    done = client.patch(f"/api/sets/{first['id']}", json={"completed": True}).get_json()
+    assert (done["weight"], done["weight_unit"], done["reps"], done["completed"]) == (140, "lbs", 9, True)
+    assert done["planned_weight"] is None and done["planned_reps"] is None

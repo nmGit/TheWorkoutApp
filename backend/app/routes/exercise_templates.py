@@ -7,7 +7,7 @@ from werkzeug.utils import safe_join
 from app.extensions import db
 from app.models.exercise import EQUIPMENT_TYPES, TRACKING_TYPES, MuscleGroup
 from app.models.exercise_template import ExerciseTemplate
-from app.models.workout import Workout, WorkoutExercise
+from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import (
     canonical_muscle_slug,
     muscle_swatch,
@@ -28,6 +28,33 @@ MAX_LIMIT = 100
 def list_muscle_groups():
     groups = MuscleGroup.query.order_by(MuscleGroup.display_order).all()
     return jsonify([serialize_muscle_group(g) for g in groups])
+
+
+@bp.get("/muscles/recency")
+def muscle_recency():
+    """Days since each muscle was last worked (muscles never worked are left out), with the
+    regions each one lights up on the body diagram. Days are in the server's local calendar."""
+    from datetime import date
+
+    from app.services.muscle_regions import regions_for
+    from app.services.recency import last_trained_dates
+
+    from app.services.recency import IN_NEED_DAYS
+
+    today = date.today()
+    return jsonify(
+        {
+            "in_need_days": IN_NEED_DAYS,
+            "muscles": {
+                slug: {
+                    "last_trained": day.isoformat(),
+                    "days_since": (today - day).days,
+                    "regions": regions_for(slug),
+                }
+                for slug, day in last_trained_dates().items()
+            },
+        }
+    )
 
 
 @bp.get("/muscle-groups/<int:group_id>/muscles")
@@ -55,17 +82,16 @@ def list_group_muscles(group_id):
 
 
 def _template_ids_for_muscle(slug: str) -> list[int]:
-    """Templates whose primary or secondary muscles include this slug. Done in
-    Python because the muscle lists are JSON and the names aren't normalised
-    in the database."""
-    rows = db.session.query(
-        ExerciseTemplate.id, ExerciseTemplate.primary_muscles, ExerciseTemplate.secondary_muscles
-    ).all()
-    return [
-        template_id
-        for template_id, primary, secondary in rows
-        if slug in {canonical_muscle_slug(m) for m in (primary or []) + (secondary or [])}
-    ]
+    """Exercises that work this muscle, primary or secondary, through the muscle table."""
+    from app.models.muscle import ExerciseMuscle, Muscle
+
+    rows = (
+        db.session.query(ExerciseMuscle.exercise_id)
+        .join(Muscle, Muscle.id == ExerciseMuscle.muscle_id)
+        .filter(Muscle.slug == slug)
+        .all()
+    )
+    return [exercise_id for (exercise_id,) in rows]
 
 
 def _last_performed(template: ExerciseTemplate):

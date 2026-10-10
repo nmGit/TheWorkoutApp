@@ -21,6 +21,8 @@ declare module '@abdofallah/musclemap-js' {
     gender?: 'male' | 'female'
     side?: BodySide
     interactive?: boolean
+    /** Draw the sub-regions (front and rear deltoid, upper chest, ...) as their own parts. */
+    showSubGroups?: boolean
     multiSelect?: boolean
     onMuscleClick?: (muscle: Muscle, side: MuscleSide) => void
   }

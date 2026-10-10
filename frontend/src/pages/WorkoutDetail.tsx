@@ -5,13 +5,15 @@ import { useExerciseStats } from '../api/stats'
 import { useCreateTemplateFromWorkout } from '../api/templates'
 import { useDeleteSet, useDeleteWorkout, useUpdateSet, useWorkout } from '../api/workouts'
 import { SetRow } from '../components/SetRow'
-import { Badge, Button, Card, LoadingState, PageTitle, ViewExerciseButton } from '../components/ui'
+import { ExerciseCard } from '../components/ExerciseCard'
+import { ExerciseList } from '../components/ExerciseList'
+import { ExerciseNotesMenu, ExerciseNotesPanel, type NoteKind } from '../components/ExerciseNotes'
+import { Badge, Button, LoadingState, PageTitle, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { formatDate, formatWorkoutDuration } from '../lib/format'
 import type { Workout, WorkoutExercise } from '../types'
 import { useUndo } from '../context/UndoContext'
 import { WorkoutMusclesHeader } from '../components/WorkoutMuscles'
-import { ExerciseNotesMenu, ExerciseNotesPanel, type NoteKind } from '../components/ExerciseNotes'
 
 export function WorkoutDetailPage() {
   const { workoutId } = useParams()
@@ -50,11 +52,10 @@ export function WorkoutDetailPage() {
 
       <WorkoutMusclesHeader workoutId={workout.id} muscles={workout.muscles} />
 
-      <div className="space-y-3">
-        {workout.exercises.map((we) => (
-          <ExerciseSection key={we.id} workout={workout} workoutExercise={we} />
-        ))}
-      </div>
+      <ExerciseList
+        items={workout.exercises}
+        renderCard={(we) => <ExerciseSection workout={workout} workoutExercise={we} />}
+      />
 
       <div className="flex gap-2">
         <Button
@@ -88,24 +89,29 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
     : false
 
   return (
-    <Card>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h3 className="truncate font-semibold">{workoutExercise.exercise_name}</h3>
+    <ExerciseCard
+      title={workoutExercise.exercise_name}
+      badges={
+        <>
           {isPrWorkout && <Badge tone="accent">PR</Badge>}
           {exercise?.equipment && <Badge>{exercise.equipment}</Badge>}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
+        </>
+      }
+      actions={
+        <>
           <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
           <ExerciseNotesMenu onChoose={setEditingNote} />
-        </div>
-      </div>
-      <ExerciseNotesPanel
-        workoutId={workout.id}
-        workoutExercise={workoutExercise}
-        editing={editingNote}
-        onDone={() => setEditingNote(null)}
-      />
+        </>
+      }
+      notes={
+        <ExerciseNotesPanel
+          workoutId={workout.id}
+          workoutExercise={workoutExercise}
+          editing={editingNote}
+          onDone={() => setEditingNote(null)}
+        />
+      }
+    >
       <div className="space-y-0.5">
         {workoutExercise.sets.map((set, i) =>
           isHidden(`set:${set.id}`) ? null : (
@@ -125,8 +131,9 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
                 })
               }
             />
-        ))}
+          ),
+        )}
       </div>
-    </Card>
+    </ExerciseCard>
   )
 }

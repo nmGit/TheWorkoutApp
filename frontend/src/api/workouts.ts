@@ -41,7 +41,7 @@ export function useWorkout(id: number | undefined) {
   })
 }
 
-function invalidateWorkout(qc: ReturnType<typeof useQueryClient>, id?: number) {
+export function invalidateWorkout(qc: ReturnType<typeof useQueryClient>, id?: number) {
   return Promise.all([
     qc.invalidateQueries({ queryKey: workoutKeys.active }),
     qc.invalidateQueries({ queryKey: ['workouts', 'list'] }),
@@ -50,6 +50,7 @@ function invalidateWorkout(qc: ReturnType<typeof useQueryClient>, id?: number) {
     // strength query is stale, not just this one's.
     qc.invalidateQueries({ queryKey: ['workouts', 'strength'] }),
     qc.invalidateQueries({ queryKey: ['strength-history'] }),
+    qc.invalidateQueries({ queryKey: ['muscle-recency'] }),
   ])
 }
 

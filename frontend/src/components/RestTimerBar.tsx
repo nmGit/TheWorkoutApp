@@ -39,7 +39,8 @@ export function RestTimerBar() {
             {timer.isExpired ? 'Rest over' : 'Resting'}
           </p>
           <p className={`text-xl font-semibold tabular-nums ${timer.isExpired ? 'text-muted' : 'text-fg'}`}>
-            {formatDuration(timer.secondsRemaining)}
+            {/* Past the end of the rest, the timer counts up as overtime. */}
+            {timer.secondsRemaining < 0 ? `+${formatDuration(-timer.secondsRemaining)}` : formatDuration(timer.secondsRemaining)}
           </p>
         </div>
 

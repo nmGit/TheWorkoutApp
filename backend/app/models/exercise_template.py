@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.extensions import db
 from app.models.exercise import TRACKING_TYPES
+from app.models.muscle import PRIMARY, SECONDARY
 
 
 def _utcnow():
@@ -57,11 +58,10 @@ class ExerciseTemplate(db.Model):
     tracking_type = db.Column(
         db.Enum(*TRACKING_TYPES, name="tracking_type", native_enum=False), nullable=True
     )
-    # Muscles worked, as the source dataset provides them (RepDB: anatomical
-    # slugs like "pectoralis_major"; the original dataset: its own terms like
-    # "pectorals"). Not translated between vocabularies.
-    primary_muscles = db.Column(db.JSON, nullable=True)
-    secondary_muscles = db.Column(db.JSON, nullable=True)
+    # The muscles this exercise works, as links to the `muscles` table (see models/muscle.py).
+    muscle_links = db.relationship(
+        "ExerciseMuscle", back_populates="exercise", cascade="all, delete-orphan"
+    )
     instructions = db.Column(db.Text, nullable=True)
     instruction_steps = db.Column(db.JSON, nullable=True)
     image_path = db.Column(db.String(255), nullable=True)
@@ -85,6 +85,68 @@ class ExerciseTemplate(db.Model):
     __table_args__ = (db.Index("uq_exercise_templates_repdb_id", "repdb_id", unique=True),)
 
     app_muscle_group = db.relationship("MuscleGroup", back_populates="exercise_templates")
+
+    @property
+    def is_stretch(self) -> bool:
+        """A stretch or mobility movement. It isn't strength work, so it never counts toward
+        a muscle's strength, its recency, or what a generated workout trains."""
+        group = self.app_muscle_group.name if self.app_muscle_group else None
+        return self.category == "stretching" or group == "Mobility"
+
+    # The names the rest of the app uses for an exercise's muscles: canonical slugs, read from
+    # the links. Writing names maps them through the muscle catalog, so a dataset name for a
+    # region or an old spelling becomes the specific muscles it means.
+
+    @property
+    def primary_muscles(self) -> list[str]:
+        return [link.muscle.slug for link in self.muscle_links if link.role == PRIMARY]
+
+    @primary_muscles.setter
+    def primary_muscles(self, names) -> None:
+        self._set_roles(primary=names)
+
+    @property
+    def secondary_muscles(self) -> list[str]:
+        return [link.muscle.slug for link in self.muscle_links if link.role == SECONDARY]
+
+    @secondary_muscles.setter
+    def secondary_muscles(self, names) -> None:
+        self._set_roles(secondary=names)
+
+    def _set_roles(self, primary=None, secondary=None) -> None:
+        """Replace the primary or secondary muscles, keeping the other role. A muscle that is
+        primary is never also secondary."""
+        from app.models.muscle import ExerciseMuscle, Muscle
+        from app.services.muscle_catalog import CANONICAL_MUSCLES, resolve
+
+        def slugs(names) -> list[str]:
+            found: list[str] = []
+            for raw in names or []:
+                for slug in resolve(raw):
+                    if slug not in found:
+                        found.append(slug)
+            return found
+
+        roles = {link.muscle.slug: link.role for link in self.muscle_links}
+        if primary is not None:
+            new = slugs(primary)
+            roles = {slug: role for slug, role in roles.items() if role != PRIMARY}
+            for slug in new:
+                roles[slug] = PRIMARY
+        if secondary is not None:
+            roles = {slug: role for slug, role in roles.items() if role != SECONDARY}
+            for slug in slugs(secondary):
+                if roles.get(slug) != PRIMARY:
+                    roles[slug] = SECONDARY
+
+        rows = {}
+        for slug, role in roles.items():
+            muscle = Muscle.query.filter_by(slug=slug).first()
+            if muscle is None:
+                muscle = Muscle(slug=slug, name=CANONICAL_MUSCLES[slug])
+                db.session.add(muscle)
+            rows[slug] = ExerciseMuscle(muscle=muscle, role=role)
+        self.muscle_links = list(rows.values())
 
     def has_logged_sets(self) -> bool:
         from app.models.workout import WorkoutExercise, WorkoutSet

@@ -18,8 +18,10 @@ export function formatShortDate(iso: string): string {
 }
 
 export function formatDuration(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60)
-  const s = Math.abs(totalSeconds % 60)
+  // Format the size, then add the sign: flooring a negative number gives the wrong minutes.
+  const size = Math.abs(totalSeconds)
+  const m = Math.floor(size / 60)
+  const s = size % 60
   const sign = totalSeconds < 0 ? '-' : ''
   return `${sign}${m}:${String(s).padStart(2, '0')}`
 }

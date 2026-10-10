@@ -39,4 +39,5 @@ def test_template_muscles_summarise_its_exercises(client, app):
         "secondary": ["hamstrings"],
         # Chest comes before Legs by display order, not alphabetically.
         "groups": ["Chest", "Legs"],
+        "regions": ["chest", "gluteal", "hamstring", "quadriceps"],
     }

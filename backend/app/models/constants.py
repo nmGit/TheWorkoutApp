@@ -1,3 +1,5 @@
 WEIGHT_UNITS = ("lbs", "kg")
 DISTANCE_UNITS = ("mi", "km")
-THEMES = ("system", "light", "dark")
+THEMES = ("system", "light", "dark", "green", "pink")
+PROGRESSION_METHODS = ("double", "linear", "off")
+EXPERIENCE_LEVELS = ("novice", "intermediate")

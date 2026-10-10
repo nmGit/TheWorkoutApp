@@ -90,8 +90,9 @@ def test_seed_creates_legacy_and_repdb_templates(app, datasets):
     legacy = _by_name("mystery move")
     assert legacy.external_id == "0001" and legacy.repdb_id is None
     assert legacy.image_path == "images/0001.jpg"
-    assert legacy.primary_muscles == ["upper back"]          # exactly as the source gave it
-    assert legacy.secondary_muscles == ["biceps", "forearms"]
+    # Names are mapped to the specific muscles they mean (see services/muscle_catalog.py).
+    assert legacy.primary_muscles == ["upper_back"]
+    assert legacy.secondary_muscles == ["biceps_brachii", "forearm_flexors", "forearm_extensors"]
 
     plank = _by_name("Plank")
     assert plank.repdb_images == ["images/flat/plank-main.webp"]

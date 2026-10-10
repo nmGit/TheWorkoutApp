@@ -65,23 +65,18 @@ def body_parts_for_muscle_group(muscle_group_name: str) -> list[str]:
 GROUP_MUSCLES = {
     "Chest": {"pectoralis_major", "upper_chest", "serratus_anterior"},
     "Back": {
-        "latissimus_dorsi", "lats", "upper_back", "rhomboids", "trapezius",
-        "levator_scapulae", "erector_spinae", "lower_back", "quadratus_lumborum",
+        "latissimus_dorsi", "upper_back", "rhomboids", "trapezius",
+        "levator_scapulae", "erector_spinae", "quadratus_lumborum",
     },
-    "Shoulders": {
-        "anterior_deltoid", "lateral_deltoid", "deltoids", "delts", "posterior_deltoid",
-        "rear_deltoids", "rotator_cuff", "supraspinatus",
-    },
+    "Shoulders": {"anterior_deltoid", "lateral_deltoid", "posterior_deltoid", "rotator_cuff"},
     "Arms": {
         "biceps_brachii", "brachialis", "brachioradialis", "triceps_brachii",
-        "forearm_flexors", "forearm_extensors", "forearms", "grip_muscles",
-        "wrist_flexors", "wrist_extensors", "wrists", "hands",
+        "forearm_flexors", "forearm_extensors", "wrist_flexors", "wrist_extensors",
     },
-    "Core": {"rectus_abdominis", "abdominals", "lower_abs", "transverse_abdominis", "obliques"},
+    "Core": {"rectus_abdominis", "transverse_abdominis", "obliques"},
     "Legs": {
-        "quadriceps", "quads", "hamstrings", "gluteus_maximus", "gluteus_medius",
-        "adductors", "groin", "inner_thighs", "abductors", "hip_flexors",
-        "calves", "gastrocnemius", "soleus", "shins", "feet", "ankles", "ankle_stabilizers",
+        "quadriceps", "hamstrings", "gluteus_maximus", "gluteus_medius", "adductors",
+        "hip_flexors", "gastrocnemius", "soleus", "tibialis",
     },
 }
 

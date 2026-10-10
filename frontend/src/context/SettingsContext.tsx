@@ -7,6 +7,11 @@ const DEFAULT_SETTINGS: UserSettings = {
   distance_unit: 'mi',
   default_rest_seconds: 90,
   theme: 'system',
+  progression_method: 'double',
+  experience: 'intermediate',
+  load_step_lb: 5,
+  load_step_kg: 2.5,
+  default_rep_range: '8-12',
 }
 
 const SettingsContext = createContext<UserSettings>(DEFAULT_SETTINGS)

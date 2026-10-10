@@ -74,6 +74,12 @@ class WorkoutSet(db.Model):
     duration_seconds = db.Column(db.Integer, nullable=True)
     distance_meters = db.Column(db.Numeric(8, 2), nullable=True)
     rest_seconds = db.Column(db.Integer, nullable=True)
+    # What a set started from a template is expected to be. Shown as ghost text until the set is
+    # completed; completing the set copies these into the entered fields above.
+    planned_weight = db.Column(db.Numeric(8, 4), nullable=True)
+    planned_weight_unit = db.Column(db.String(3), nullable=True)
+    planned_reps = db.Column(db.Integer, nullable=True)
+    planned_duration_seconds = db.Column(db.Integer, nullable=True)
 
     is_warmup = db.Column(db.Boolean, nullable=False, default=False)
     is_dropset = db.Column(db.Boolean, nullable=False, default=False)

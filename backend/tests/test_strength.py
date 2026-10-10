@@ -160,8 +160,8 @@ def test_planned_exercise_is_pending_and_not_scored(client, app):
         db.session.commit()
 
     body = client.get(f"/api/workouts/{wid}/strength").get_json()
-    assert body["muscles"]["lats"]["status"] == "pending"
-    assert body["muscles"]["lats"]["ratio"] is None
+    assert body["muscles"]["latissimus_dorsi"]["status"] == "pending"
+    assert body["muscles"]["latissimus_dorsi"]["ratio"] is None
 
 
 def test_unknown_workout_is_404(client):

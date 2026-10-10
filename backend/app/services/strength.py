@@ -90,11 +90,12 @@ def _muscle_weights(exercise: ExerciseTemplate) -> dict[str, float]:
 
 def _measurement_kind(exercise: ExerciseTemplate) -> str | None:
     """Which kind of measurement an exercise is scored as, or None if it isn't scored."""
+    if exercise.is_stretch:
+        return None
     if exercise.tracking_type == "weight_reps":
         return LOAD
     if exercise.tracking_type == "time":
-        group = exercise.app_muscle_group.name if exercise.app_muscle_group else None
-        return None if group in HOLD_EXCLUDED_GROUPS else HOLD
+        return HOLD
     return None  # cardio, bodyweight reps, and anything else
 
 
@@ -145,14 +146,17 @@ def workout_muscle_values(workout: Workout) -> dict[str, float]:
 
 
 def _planned_muscles(workout: Workout) -> set[str]:
-    """Muscles of scored exercises with no completed set yet: planned, or skipped."""
+    """Muscles of exercises with no completed set yet: planned, or skipped. Every exercise the
+    generator treats as strength work counts, including bodyweight and timed core work. Cardio and
+    stretches don't, since they don't work a muscle in the strength sense."""
     planned = set()
     for we in workout.exercises:
-        if we.exercise is None or any(s.completed for s in we.sets):
+        ex = we.exercise
+        if ex is None or any(s.completed for s in we.sets):
             continue
-        if _measurement_kind(we.exercise) is None:
+        if ex.tracking_type == "cardio" or ex.is_stretch:
             continue
-        planned.update(_muscle_weights(we.exercise))
+        planned.update(_muscle_weights(ex))
     return planned
 
 
