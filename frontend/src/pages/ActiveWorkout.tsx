@@ -129,7 +129,16 @@ export function ActiveWorkoutPage() {
         <div className="min-w-0 flex-1">
           <NameEditor workout={workout} onSave={(name) => updateWorkout.mutate({ name })} />
           <p key={elapsedTick} className="text-sm text-muted">
-            {formatElapsed(workout.started_at)} elapsed
+            {formatElapsed(workout.started_at)} elapsed ·{' '}
+            <a
+              href="/docs/features/workout_logging.html#the-active-workout-screen"
+              target="_blank"
+              rel="noreferrer"
+              title="Open the user manual's active workout section"
+              className="font-medium hover:text-accent"
+            >
+              Help
+            </a>
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">

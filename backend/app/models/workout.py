@@ -80,6 +80,10 @@ class WorkoutSet(db.Model):
     planned_weight_unit = db.Column(db.String(3), nullable=True)
     planned_reps = db.Column(db.Integer, nullable=True)
     planned_duration_seconds = db.Column(db.Integer, nullable=True)
+    # True when the planned values above came from progressive overload actually computing a next
+    # weight/reps, rather than a plain copy of last session (warm-ups/drops, or no history/progression
+    # off). Cleared along with the planned_* fields when the set is completed.
+    planned_is_progressed = db.Column(db.Boolean, nullable=False, default=False)
 
     is_warmup = db.Column(db.Boolean, nullable=False, default=False)
     is_dropset = db.Column(db.Boolean, nullable=False, default=False)

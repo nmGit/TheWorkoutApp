@@ -97,6 +97,8 @@ export interface WorkoutSet {
   planned_weight_unit: WeightUnit | null
   planned_reps: number | null
   planned_duration_seconds: number | null
+  /** True when the planned values above came from progressive overload, not a plain copy. */
+  planned_is_progressed: boolean
   is_warmup: boolean
   is_dropset: boolean
   rpe: number | null

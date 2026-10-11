@@ -10,7 +10,12 @@ extensions = [
     "sphinx.ext.duration",
     "sphinx.ext.autosectionlabel",
     "sphinx_copybutton",
+    "sphinxcontrib.mermaid",
 ]
+
+# Renders client-side via mermaid.js (bundled by the extension) rather than shelling
+# out to the mermaid-cli/Node at build time, which this environment doesn't have.
+mermaid_version = "11.4.1"
 
 source_suffix = {
     ".rst": "restructuredtext",

@@ -20,6 +20,14 @@ class Config:
         os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist")),
     )
 
+    # Built Sphinx docs (see docs/, scripts/build-docs.sh), served at /docs by
+    # app/routes/docs.py. Not built by default -- a missing directory is a 404,
+    # not a startup failure.
+    DOCS_BUILD_DIR = os.environ.get(
+        "DOCS_BUILD_DIR",
+        os.path.abspath(os.path.join(BASE_DIR, "..", "docs", "build", "html")),
+    )
+
     # The two bundled exercise datasets, both git submodules at fixed
     # locations in this repo (so plain constants, not environment variables;
     # tests override them via a Config subclass). The "legacy" dataset is

@@ -80,6 +80,39 @@ def test_generate_endpoint_creates_an_active_workout_and_refuses_a_second(client
     assert client.post("/api/workouts/generated", json={"count": 0}).status_code == 400
 
 
+def test_generated_workout_sets_use_progressive_overload(client, app):
+    """A generated workout's working sets are planned the same way a template start's are --
+    not left bare -- so the next session already reflects progression."""
+    import pytest
+
+    from app.services.units import convert_weight
+
+    with app.app_context():
+        back = MuscleGroup(name="Back", display_order=2)
+        db.session.add(back)
+        db.session.flush()
+        pulldown = ExerciseTemplate(name="pulldown", muscle_group_id=back.id, tracking_type="weight_reps",
+                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[], is_custom=False)
+        db.session.add(pulldown)
+        db.session.flush()
+        _session(pulldown, 3)  # one completed session: 50kg x 8 reps
+        db.session.commit()
+
+    resp = client.post("/api/workouts/generated", json={"count": 1})
+    sets = resp.get_json()["exercises"][0]["sets"]
+    assert len(sets) == 3
+    # Double progression, default 8-12 range: 8 reps hasn't reached the top, so the weight repeats
+    # and a rep is added (default weight_unit is lbs; the session was logged in kg).
+    expected_weight = round(convert_weight(50, "kg", "lbs"), 2)
+    for s in sets:
+        assert s["weight"] is None and s["reps"] is None and s["completed"] is False
+        assert s["planned_weight"] == pytest.approx(expected_weight)
+        assert s["planned_weight_unit"] == "lbs"
+        assert s["planned_reps"] == 9
+        assert s["is_warmup"] is False and s["is_dropset"] is False
+        assert s["planned_is_progressed"] is True
+
+
 def test_familiar_first_uses_known_exercises_before_unfamiliar_ones(app):
     """A familiar pulldown and an unfamiliar chin-up that works a muscle never trained. The
     never-trained muscle doesn't count, so the pulldown is the only one with a priority."""

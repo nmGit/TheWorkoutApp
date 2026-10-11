@@ -35,6 +35,29 @@ Glossary
       A set performed immediately after the previous one, at reduced
       weight, with no rest in between.
 
+   Muscle recency
+      How long since a muscle was last worked by a completed, counting
+      set. A muscle is "in need" once that reaches 8 days. See
+      :doc:`features/generated_workouts`.
+
+   Training group
+      One of Chest/Back/Shoulders/Arms/Core/Legs, each a fixed set of
+      canonical muscles, used to rank what a generated workout should
+      focus on. Not the same thing as the exercise catalog's
+      ``MuscleGroup`` — see :doc:`data_model`.
+
+   Progression method
+      How a template-started workout's working sets change from one
+      session to the next: double progression, linear progression, or
+      off. See :doc:`features/progressive_overload`.
+
+   Planned value
+      A set's expected weight/reps/duration before it's actually
+      performed — shown as ghost (placeholder) text, not a real entered
+      value. Set by progressive overload or copied from last session;
+      becomes real the moment the set is completed. See
+      :doc:`features/progressive_overload`.
+
 Entered data
    Information a user enters: workouts, sets, exercises, notes, body weight. It is
    the source of truth and can't be regenerated.

@@ -16,7 +16,10 @@
 #   6. seeds/refreshes the exercise catalog (safe to re-run; never touches
 #      anything you've edited)
 #   7. installs frontend dependencies from the lockfile and builds the web app
-#   8. stops any previously started production server, then starts a new one
+#   8. builds the Sphinx documentation (scripts/build-docs.sh), served at /docs
+#      by the app itself; a failure here only warns, since the app runs fine
+#      without it
+#   9. stops any previously started production server, then starts a new one
 #
 # Options:
 #   --fresh              first delete backend/.venv and frontend/node_modules
@@ -330,6 +333,16 @@ build_frontend() {
   ok "Frontend built ($(du -sh dist | cut -f1))"
 }
 
+# ------------------------------------------------------------------ 7.5 docs
+build_docs() {
+  step "Documentation"
+  if "$ROOT/scripts/build-docs.sh"; then
+    ok "Docs built, served at /docs"
+  else
+    warn "Docs build failed; the app runs fine without it (in-app Help links will 404 until it's fixed)."
+  fi
+}
+
 # --------------------------------------------------------------- 7. server
 pid_is_ours() {  # a wsgi.py process started from this checkout's backend/
   local pid="$1"
@@ -434,6 +447,7 @@ main() {
   migrate_database
   seed_catalog
   build_frontend
+  build_docs
   if [ "$START" -eq 1 ]; then
     start_server
   else

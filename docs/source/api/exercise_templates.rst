@@ -11,10 +11,27 @@ separate rows, and why that was a bug).
 ``GET /api/muscle-groups``
    List all muscle groups, ``[{id, name, display_order}]``.
 
+``GET /api/muscle-groups/:id/muscles``
+   The muscles that make up this group — e.g. Pectoralis Major under
+   Chest — sorted by name, limited to muscles that group's exercises
+   actually train as *primary*. Membership comes from the fixed
+   ``GROUP_MUSCLES`` training-group mapping (see :doc:`../data_model`),
+   not from scanning exercises alone, so a stray primary doesn't leak
+   into the wrong group's chip.
+
+``GET /api/muscles/recency``
+   Days since each muscle was last trained (see :doc:`../data_flow`).
+   ``{in_need_days: 8, muscles: {<slug>: {last_trained, days_since,
+   regions}}}`` — a muscle never trained is left out entirely. Backs the
+   home screen's recency map, the generate panel's group ranking, and the
+   exercise library's muscle-filter ordering.
+
 ``GET /api/exercise-templates``
    List/search. Query params: ``q`` (name search), ``muscle_group_id``
    (this app's own ``MuscleGroup``, filters the real column directly —
-   ``404`` if unknown), ``equipment`` (this app's fixed vocabulary),
+   ``404`` if unknown), ``muscle`` (a canonical slug — exercises that work
+   it, primary or secondary, via the ``ExerciseMuscle`` link table),
+   ``equipment`` (this app's fixed vocabulary),
    ``tracking_type``, ``body_part`` (exact match against the dataset's own
    vocabulary, dataset-sourced templates only), ``is_custom``
    (``true``/``false``), ``limit`` (default 40, capped at 100), ``offset``.
@@ -22,9 +39,11 @@ separate rows, and why that was a bug).
    last logged set, or omitted if never logged) for list-view display, plus
    the dataset-sourced content: ``image_url`` / ``image_urls``,
    ``instruction_steps``, ``tips``, ``difficulty``, ``mechanic``, ``attribution``,
-   and ``primary_muscles`` / ``secondary_muscles`` as ``[{name, image_url}]``
-   — the names are the source dataset's own, and ``image_url`` is ``null``
-   unless RepDB has a diagram for that muscle.
+   and ``primary_muscles`` / ``secondary_muscles`` as
+   ``[{slug, name, image_url, regions}]`` — canonical muscle slugs (see
+   :ref:`model-muscle`), not the source dataset's own wording; ``image_url``
+   is ``null`` unless RepDB has a diagram for that muscle, and ``regions``
+   are the body-map SVG region(s) it lights up (:doc:`../data_flow`).
 
 ``GET /api/exercise-templates/facets``
    ``{body_parts: [...], equipment: [...]}`` — every distinct dataset

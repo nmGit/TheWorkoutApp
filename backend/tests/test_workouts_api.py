@@ -362,6 +362,33 @@ def test_double_progression_adds_load_once_the_top_of_the_range_is_reached(clien
     tid = _template_with(client, bench_press.id, target_reps="6-8")
     sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
     assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(140, 6), (140, 6)]
+    assert all(s["planned_is_progressed"] for s in sets)
+
+
+def test_progression_off_and_warmups_are_not_marked_progressed(client, bench_press):
+    earlier = client.post("/api/workouts", json={}).get_json()
+    we = client.post(f"/api/workouts/{earlier['id']}/exercises", json={"exercise_id": bench_press.id}).get_json()
+    we_id = we["exercises"][0]["id"]
+    warmup_id = client.post(f"/api/workout-exercises/{we_id}/sets", json={}).get_json()["id"]
+    client.patch(f"/api/sets/{warmup_id}", json={"weight": 95, "weight_unit": "lbs", "reps": 5, "is_warmup": True, "completed": True})
+    for weight, reps in [(135, 8), (135, 8)]:
+        set_id = client.post(f"/api/workout-exercises/{we_id}/sets", json={}).get_json()["id"]
+        client.patch(f"/api/sets/{set_id}", json={"weight": weight, "weight_unit": "lbs", "reps": reps, "completed": True})
+    client.patch(f"/api/workouts/{earlier['id']}", json={"finish": True})
+
+    tid = _template_with(client, bench_press.id, target_reps="6-8", warmup_sets=1)
+    started = client.post("/api/workouts", json={"template_id": tid}).get_json()
+    sets = started["exercises"][0]["sets"]
+    warmup, working = sets[0], sets[1]
+    assert warmup["is_warmup"] and warmup["planned_is_progressed"] is False
+    assert working["planned_is_progressed"] is True
+    client.delete(f"/api/workouts/{started['id']}")
+
+    client.patch("/api/settings", json={"progression_method": "off"})
+    sets_off = client.post(
+        "/api/workouts", json={"template_id": _template_with(client, bench_press.id, target_reps="6-8")}
+    ).get_json()["exercises"][0]["sets"]
+    assert all(s["planned_is_progressed"] is False for s in sets_off)
 
 
 def test_double_progression_repeats_the_load_and_adds_a_rep_below_the_top(client, bench_press):
@@ -436,3 +463,4 @@ def test_completing_a_planned_set_makes_its_planned_values_real(client, bench_pr
     done = client.patch(f"/api/sets/{first['id']}", json={"completed": True}).get_json()
     assert (done["weight"], done["weight_unit"], done["reps"], done["completed"]) == (140, "lbs", 9, True)
     assert done["planned_weight"] is None and done["planned_reps"] is None
+    assert done["planned_is_progressed"] is False

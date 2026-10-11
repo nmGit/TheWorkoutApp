@@ -219,6 +219,7 @@ def serialize_set(s):
         "planned_weight_unit": s.planned_weight_unit,
         "planned_reps": s.planned_reps,
         "planned_duration_seconds": s.planned_duration_seconds,
+        "planned_is_progressed": s.planned_is_progressed,
         "is_warmup": s.is_warmup,
         "is_dropset": s.is_dropset,
         "rpe": _num(s.rpe),

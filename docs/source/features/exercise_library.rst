@@ -66,6 +66,11 @@ the merge that fixed it.)
 Browsing
 --------
 
+.. image:: /_static/screenshots/exercise_library.png
+   :alt: The exercise library's search and filter screen
+   :width: 360px
+   :align: center
+
 ``/exercises`` shows the **full template catalog** (all 1,324+ dataset
 templates plus any custom ones), not just exercises the user has already
 logged — searchable by name and filterable by muscle group. Tapping any
@@ -88,6 +93,11 @@ dataset-sourced ones everywhere else in the app.
 
 Exercise detail
 ------------------
+
+.. image:: /_static/screenshots/exercise_detail.png
+   :alt: An exercise's detail screen, with history and progress chart
+   :width: 360px
+   :align: center
 
 ``/exercises/:id`` combines two things, matching Strong's exercise detail
 screen:

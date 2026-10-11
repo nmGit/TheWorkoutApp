@@ -1,0 +1,106 @@
+Progressive overload
+======================
+
+When you start a workout from a template or generate one, its working
+sets can be pre-filled with a little more than last time —
+automatically, without you tracking it yourself.
+
+Where it applies
+------------------
+
+Progressive overload runs whenever a workout's exercises come with a
+working-set count to fill: starting from a **template**
+(``POST /api/workouts {template_id}``) and :doc:`generating a workout
+<generated_workouts>` (``POST /api/workouts/generated``) both get it. A
+**blank** workout is the one way to skip it — exercises added to a blank
+workout have no planned sets at all, so their set rows just show last
+session's values as ghost text once you focus them (ordinary "what you
+did last time" behavior, see :doc:`workout_logging`), with no computed
+*next* weight or rep count. A generated workout's exercises always use
+the Settings default rep range (below) rather than a per-exercise
+override, since there's no template exercise to carry one.
+
+Settings → Generated Workouts
+--------------------------------
+
+.. image:: /_static/screenshots/settings_progression.png
+   :alt: The Generated Workouts settings page
+   :width: 300px
+   :align: center
+
+- **Progression** — ``double``, ``linear``, or ``off``:
+
+  - **Double progression** (the default): add reps within the exercise's
+    rep range; once every working set reaches the top of the range, add
+    load and drop back to the bottom of the range.
+  - **Linear progression**: stay at the top-of-range rep target; add load
+    whenever every working set reaches it, otherwise repeat the same
+    weight and target.
+  - **Off**: the next workout's working sets simply copy last session's
+    weights and reps, unchanged.
+
+- **Default rep range** (only shown when progression isn't off) — like
+  ``8-12``. Used for any exercise that doesn't set its own range (below).
+- **Experience** — ``novice`` or ``intermediate``. Stored per the
+  schema (see :doc:`../data_model`); not yet read by the progression
+  calculation itself.
+- **Load step (lb)** / **Load step (kg)** — the amount added when it's
+  time to add load, in each unit. Whichever unit your display is
+  currently set to is the one used, so switching units changes which step
+  applies without needing to re-enter anything.
+
+Per-exercise rep range
+-------------------------
+
+Each exercise in a template editor has its own **Rep range** field
+(:doc:`templates`). Set, it overrides the Settings default for that
+exercise only; left blank, the exercise uses the Settings default. This is
+the one place progressive overload can be tuned per exercise — there's no
+per-exercise override for progression method or load step.
+
+What counts as a working set
+-------------------------------
+
+Only a session's **working sets** feed progression — warm-ups and drop
+sets are read, but never written by it:
+
+- A warm-up or drop set's planned value next time is always just a copy
+  of that same kind of set from last session, regardless of the
+  progression method.
+- Progression itself only looks at the completed working sets of the most
+  recent *completed* session for that exercise, and only computes a next
+  value from them if at least one had a logged weight.
+- The "reached the top of the range" check for double/linear progression
+  is based on the heaviest working set(s) of that session (within 0.5%
+  of the top weight) — lighter back-off sets at the same session don't
+  drag the decision down.
+
+How it's shown before you log anything
+------------------------------------------
+
+The computed next weight/reps aren't written into the set as a real,
+entered value. They're stored separately as that set's *planned* weight,
+unit, reps and duration, and shown as placeholder text in the set row —
+exactly like the "last time" ghost text used everywhere else, just
+computed instead of copied. Completing the set copies whichever fields
+you left blank from the planned value into the real one; typing your own
+number in a field replaces its ghost text immediately. See
+:doc:`workout_logging` and :doc:`../data_model` (``WorkoutSet.planned_*``).
+
+Two small cues call out that a field's ghost text is progression's doing,
+not just a copy:
+
+- **Color**: a field's ghost text is muted green when progression raised
+  it over what that same set was last time (reps 8 → 12, say), muted
+  amber when it lowered it (reps 12 → 8, when the weight went up
+  instead), and the ordinary muted grey otherwise — including a plain
+  copy (warm-ups, drops, progression off), since nothing changed there to
+  color. The comparison is per field: in a double-progression jump from
+  3×8 @ 120 to 3×12 @ 120, only the "12" turns green; the next session's
+  jump to 3×8 @ 140 turns "140" green and "8" amber, since the rep count
+  dropped back to the bottom of the range.
+- **A small "P"** appears under the set number (alongside the warm-up
+  "W"/drop "D" badges — a set is never both) whenever that set's ghost
+  values came from progression rather than a plain copy. It disappears
+  once the set is completed, the same moment its planned values are
+  cleared, since by then it's no longer a suggestion.

@@ -149,8 +149,12 @@ is ``null`` until at least one muscle is scored.
 Colours on the workout map
 --------------------------
 
-Each body region is coloured by the muscle or muscles that map to it (see
-``frontend/src/lib/muscleMap.ts``):
+The body diagram is rendered by the ``@abdofallah/musclemap-js`` SVG
+renderer (:doc:`../architecture`), which draws named body *regions*, not
+muscles directly. ``services/muscle_regions.py`` maps each canonical
+muscle slug to the region(s) it lights up (several muscles can share a
+region, and the reverse); the frontend's ``lib/strengthColors.ts`` turns
+each muscle's score into a colour per region:
 
 - **Green to red**: the ratio. Full colour at ±10% (``SATURATION = 0.1``), and
   neutral near 1.0. If several muscles share a region, their ratios are

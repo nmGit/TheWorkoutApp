@@ -49,7 +49,21 @@ export function ExerciseLibraryPage() {
 
   return (
     <div className="space-y-4">
-      <PageTitle>Exercises</PageTitle>
+      <PageTitle
+        action={
+          <a
+            href="/docs/features/exercise_library.html"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's exercise library section"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        }
+      >
+        Exercises
+      </PageTitle>
 
       <input
         value={query}

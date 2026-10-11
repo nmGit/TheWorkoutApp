@@ -19,6 +19,7 @@ from app.models.exercise_template import ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.services.exercise_templates import GROUP_MUSCLES
 from app.services.recency import IN_NEED_DAYS, days_since_trained
+from app.services.sets_plan import SetPlanSpec, make_planned_sets, plan_sets
 from app.services.strength import muscle_shares
 
 NEVER_DAYS = 60  # overdue-ness is capped here, so muscles months out of training don't swamp the rest
@@ -212,6 +213,9 @@ def workout_name(exercises: list[ExerciseTemplate]) -> str:
 
 
 def create_generated_workout(exercises: list[ExerciseTemplate]) -> Workout:
+    """Build the workout, with its sets planned the same way a template start is: progressive
+    overload for the working sets (no warm-ups/drops -- a generated session doesn't know how many
+    you'd want, so it only picks the working-set count)."""
     workout = Workout(name=workout_name(exercises))
     db.session.add(workout)
     db.session.flush()
@@ -219,8 +223,8 @@ def create_generated_workout(exercises: list[ExerciseTemplate]) -> Workout:
         we = WorkoutExercise(workout_id=workout.id, exercise_id=ex.id, position=position)
         db.session.add(we)
         db.session.flush()
-        sets = STRENGTH_SETS if ex.tracking_type in ("weight_reps", "bodyweight_reps") else 1
-        for i in range(sets):
-            db.session.add(WorkoutSet(workout_exercise_id=we.id, position=i, completed=False))
+        target_sets = STRENGTH_SETS if ex.tracking_type in ("weight_reps", "bodyweight_reps") else 1
+        spec = SetPlanSpec(exercise_id=ex.id, target_sets=target_sets)
+        db.session.add_all(make_planned_sets(we.id, plan_sets(spec)))
     db.session.commit()
     return workout

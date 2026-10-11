@@ -71,7 +71,18 @@ export function GenerateWorkout() {
         {toggle(familiarFirst, setFamiliarFirst, 'Prioritize familiar exercises')}
       </div>
       <div className="space-y-1.5">
-        <p className="text-xs text-muted">Groups, most in need first</p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted">Groups, most in need first</p>
+          <a
+            href="/docs/features/generated_workouts.html"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's generated workouts section"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        </div>
         <div className="flex flex-wrap gap-2">
           {(ranking ?? []).map((g) => {
             const on = selected?.includes(g.name) ?? false

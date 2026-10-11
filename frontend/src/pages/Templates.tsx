@@ -45,9 +45,20 @@ export function TemplatesPage() {
     <div className="space-y-4">
       <PageTitle
         action={
-          <Button onClick={handleCreate} disabled={createTemplate.isPending} title="Create a new template">
-            + New
-          </Button>
+          <div className="flex items-center gap-3">
+            <a
+              href="/docs/features/templates.html"
+              target="_blank"
+              rel="noreferrer"
+              title="Open the user manual's templates section"
+              className="text-xs font-medium text-muted hover:text-accent"
+            >
+              Help
+            </a>
+            <Button onClick={handleCreate} disabled={createTemplate.isPending} title="Create a new template">
+              + New
+            </Button>
+          </div>
         }
       >
         Templates

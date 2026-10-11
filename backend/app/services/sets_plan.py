@@ -10,12 +10,28 @@ the last completed session of that exercise:
 Warm-ups are never used to progress a load: only working sets count.
 """
 
-from app.models.workout import Workout, WorkoutExercise
+from dataclasses import dataclass
+
+from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.models.settings import UserSettings
 from app.services.units import convert_weight
 
 DEFAULT_REP_RANGE = (8, 12)
 TOP_TOLERANCE = 0.005  # sets within 0.5% of the session's top weight count as its top sets
+
+
+@dataclass
+class SetPlanSpec:
+    """What plan_sets needs to know about an exercise slot: how many sets of each kind to start
+    with, and an optional rep-range override. A ``TemplateExercise`` already has all of these
+    attributes, so it can be passed to plan_sets directly; a caller with no template (a generated
+    workout) builds one of these instead."""
+
+    exercise_id: int
+    target_reps: str | None = None
+    warmup_sets: int = 0
+    target_sets: int = 1
+    drop_sets: int = 0
 
 
 def rep_range_or_none(text: str | None) -> tuple[int, int] | None:
@@ -114,6 +130,7 @@ def plan_sets(template_exercise) -> list[dict]:
                     "weight_unit": unit,
                     "reps": reps,
                     "duration_seconds": None,
+                    "is_progressed": True,
                 })
                 continue
             if i < len(copies):
@@ -129,5 +146,26 @@ def plan_sets(template_exercise) -> list[dict]:
                 "weight_unit": source.weight_unit if source else None,
                 "reps": source.reps if source else None,
                 "duration_seconds": source.duration_seconds if source else None,
+                "is_progressed": False,
             })
     return planned
+
+
+def make_planned_sets(workout_exercise_id: int, planned: list[dict]) -> list[WorkoutSet]:
+    """Turn plan_sets's output into unsaved WorkoutSet rows, in order. The values go into each
+    set's planned_* fields, not its real ones -- see WorkoutSet.planned_weight."""
+    return [
+        WorkoutSet(
+            workout_exercise_id=workout_exercise_id,
+            position=position,
+            completed=False,
+            is_warmup=p["is_warmup"],
+            is_dropset=p["is_dropset"],
+            planned_weight=p["weight"],
+            planned_weight_unit=p["weight_unit"],
+            planned_reps=p["reps"],
+            planned_duration_seconds=p["duration_seconds"],
+            planned_is_progressed=p["is_progressed"],
+        )
+        for position, p in enumerate(planned)
+    ]

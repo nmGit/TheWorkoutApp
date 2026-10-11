@@ -72,10 +72,25 @@ export function PlanSets({
         {counter('Sets', exercise.target_sets ?? 1, 1, 'target_sets')}
         {counter('Drop', exercise.drop_sets, 0, 'drop_sets')}
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <span className="text-muted">Rep range</span>
-        <RepRangeInput value={exercise.target_reps ?? ''} onCommit={(v) => onChange({ target_reps: v || null })} />
-      </label>
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted">Rep range</span>
+          <RepRangeInput value={exercise.target_reps ?? ''} onCommit={(v) => onChange({ target_reps: v || null })} />
+        </label>
+        <p className="text-xs text-muted">
+          Progressive overload works toward this range for this exercise, instead of the default range
+          from Settings → Generated Workouts.{' '}
+          <a
+            href="/docs/features/progressive_overload.html"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's progressive overload section"
+            className="font-medium hover:text-accent"
+          >
+            Learn more
+          </a>
+        </p>
+      </div>
       <div className="space-y-0.5">
         {planned.map((row, i) => (
           <div key={i} className="flex items-center gap-3 rounded-lg py-1 text-sm">

@@ -9,22 +9,41 @@ documents.
 Entity-relationship overview
 -----------------------------
 
-.. code-block:: text
+.. mermaid::
 
-   MuscleGroup 1───* ExerciseTemplate 1───* TemplateExercise *───1 WorkoutTemplate
-                                    │                                   │
-                                    │                                   │ 1
-                                    │                                   │
-                                    │                                   * (optional, workout.template_id)
-                                    │                                   │
-                                    │                             WorkoutExercise *───────────────────────1 Workout
-                                    │ 1                                 │ 1
-                                    │                                   │
-                                    *                                   *
-                              WorkoutExercise                       WorkoutSet
+   erDiagram
+       MuscleGroup ||--o{ ExerciseTemplate : has
+       ExerciseTemplate ||--o{ ExerciseMuscle : has
+       Muscle ||--o{ ExerciseMuscle : "worked by"
+       ExerciseTemplate ||--o{ TemplateExercise : "used by"
+       WorkoutTemplate ||--o{ TemplateExercise : has
+       WorkoutTemplate ||--o{ Workout : "started from (optional)"
+       ExerciseTemplate ||--o{ WorkoutExercise : "used by"
+       Workout ||--o{ WorkoutExercise : has
+       WorkoutExercise ||--o{ WorkoutSet : has
 
-   BodyweightEntry            (standalone, date + weight)
-   UserSettings                (singleton row)
+       BodyweightEntry {
+           date recorded_at
+           decimal weight
+       }
+       UserSettings {
+           int id "singleton, always 1"
+       }
+
+Two different things are both informally called a "muscle group" in this
+codebase, and they don't share rows:
+
+- ``MuscleGroup`` (above) is the exercise **catalog's** fixed list —
+  Chest, Back, Shoulders, Arms, Core, Legs, Cardio, Full Body, Mobility —
+  used for browsing/filtering the exercise library.
+- The **training groups** used to rank what's due for generated workouts
+  (:doc:`features/generated_workouts`) are a separate, hard-coded mapping,
+  ``GROUP_MUSCLES`` in ``services/exercise_templates.py``: Chest, Back,
+  Shoulders, Arms, Core, Legs, each a fixed set of canonical muscle slugs.
+  There's no database table for these — they only exist in that one
+  module constant, consulted by ``services/generate.py``. Cardio,
+  Mobility and Full Body intentionally have no training group, since
+  generated workouts don't rank them.
 
 ``ExerciseTemplate`` is the sole "what is this exercise" concept — name,
 muscle group, equipment, tracking type, description/instructions/notes.
@@ -136,14 +155,18 @@ survive. See :doc:`features/exercise_library` for how these surface in the UI.
      - string, nullable
      - The dataset's own vocabulary/classification (e.g. ``body_part:
        upper legs``) — display/reference only, never used for filtering.
-       Null for custom templates.
-   * - primary_muscles / secondary_muscles
-     - JSON list of strings, nullable
-     - Muscles worked, exactly as the source dataset names them — RepDB's
-       anatomical slugs (``pectoralis_major``) or the original dataset's
-       terms (``pectorals``). Not translated between vocabularies; the UI
-       shows a muscle diagram only where RepDB happens to ship one under the
-       same name.
+       Null for custom templates. ``target_muscle``/``muscle_group`` here
+       are leftover plain-text dataset fields, superseded by the
+       ``muscle_links`` relationship below; nothing reads them anymore.
+   * - (muscles worked)
+     - via ``muscle_links`` → ``ExerciseMuscle`` → ``Muscle``
+     - Not a column on this table. ``primary_muscles``/``secondary_muscles``
+       are Python properties that read ``muscle_links`` (filtering by
+       ``role``) — see :ref:`model-muscle` below. This replaced an earlier
+       pair of JSON list-of-strings columns holding each dataset's raw,
+       uncanonicalised muscle names (``pectorals`` vs. ``pectoralis_major``
+       for the same muscle); seeding now resolves every raw name to one
+       canonical ``Muscle`` row via ``services/muscle_catalog.py``.
    * - instructions
      - text, nullable
      - Full English instructions as a single paragraph.
@@ -183,6 +206,76 @@ survive. See :doc:`features/exercise_library` for how these surface in the UI.
    * - created_at
      - datetime
      -
+   * - (``is_stretch`` property)
+     - computed, not a column
+     - ``True`` when ``category == "stretching"`` or the exercise's
+       ``MuscleGroup`` is ``Mobility``. Excludes the exercise from
+       strength scoring, muscle recency, and generated-workout picks —
+       stretching a muscle isn't training its strength. A handful of
+       dataset entries that are really stretches (an adductor stretch, a
+       yoga pose) are mis-classified as ``weight_reps`` under a strength
+       muscle group upstream and so are *not* caught by this — known,
+       not yet corrected.
+
+.. _model-muscle:
+
+``Muscle``
+~~~~~~~~~~~
+
+One row per canonical muscle (35 of them) — the vocabulary every exercise's
+worked muscles, every strength score, and the muscle-recency/body-map
+features all key off of. ``services/muscle_catalog.py`` is the only place
+that resolves a dataset's raw muscle wording (``pectorals``, ``chest``,
+...) to one of these; everywhere else in the app, a muscle is just its
+``slug``.
+
+.. list-table::
+   :widths: 22 22 56
+   :header-rows: 1
+
+   * - Column
+     - Type
+     - Notes
+   * - id
+     - PK
+     -
+   * - slug
+     - string, unique
+     - e.g. ``pectoralis_major``, ``biceps_brachii``
+   * - name
+     - string
+     - Display name, e.g. ``Pectoralis Major``
+
+Body regions (what's actually drawn on the body-map SVG) are a further,
+many-to-many mapping on top of this — ``services/muscle_regions.py`` — not
+stored in the database at all; see :doc:`features/strength_score` and
+:doc:`architecture`.
+
+.. _model-exercisemuscle:
+
+``ExerciseMuscle``
+~~~~~~~~~~~~~~~~~~~~
+
+The link table behind ``ExerciseTemplate.primary_muscles`` /
+``secondary_muscles`` (properties, not real columns — see above).
+
+.. list-table::
+   :widths: 22 22 56
+   :header-rows: 1
+
+   * - Column
+     - Type
+     - Notes
+   * - exercise_id
+     - FK -> ExerciseTemplate, PK (composite)
+     - Cascade delete with the exercise
+   * - muscle_id
+     - FK -> Muscle, PK (composite)
+     -
+   * - role
+     - string (``primary``/``secondary``)
+     - A muscle is never linked as both for the same exercise — setting
+       one role for a muscle already linked under the other replaces it.
 
 .. _model-workouttemplate:
 
@@ -240,13 +333,25 @@ A saved, reusable shape for a workout ("routine" in Strong's terms).
      - Order within the template
    * - target_sets
      - int, nullable
-     -
+     - How many **working** sets (see :doc:`features/progressive_overload`)
+   * - warmup_sets / drop_sets
+     - int, default 0
+     - How many warm-up/drop sets come before/after the working sets.
+       Always copy that same kind of set from last session, unchanged —
+       never progressed.
    * - target_reps
      - string, nullable
-     - Free-form to allow ranges like ``8-12``
+     - Free-form, e.g. ``8-12`` or a single number. Despite the name,
+       this is this exercise's **rep-range override** for progressive
+       overload (:doc:`features/progressive_overload`), not a literal
+       target repeated every set — left null, the exercise uses the
+       global default rep range from Settings.
    * - target_weight
      - decimal, nullable
-     - Suggested starting weight, pre-fills the first set
+     - Set by "Save as template from a workout" (the last logged weight)
+       and accepted on write, but not read by anything at runtime —
+       progression computes the next weight from history instead. A
+       candidate for removal.
 
 .. _model-workout:
 
@@ -369,11 +474,39 @@ One exercise block within a workout.
        from last time. Not copied to new sets by "+ Add set".
    * - is_warmup
      - bool, default false
-     - Excluded from PR/1RM calculations
+     - Excluded from PR/1RM calculations, strength scoring
+       (:doc:`features/strength_score`), muscle recency
+       (:doc:`features/generated_workouts`), and progressive overload
+       (:doc:`features/progressive_overload`) — a warm-up is never
+       counted as evidence of what you can actually lift.
    * - is_dropset
      - bool, default false
      - A drop set performed immediately after the previous set at reduced
-       weight, no rest between
+       weight, no rest between. Excluded from the same things
+       ``is_warmup`` is, for the same reason.
+   * - planned_weight / planned_weight_unit / planned_reps /
+       planned_duration_seconds
+     - decimal / enum / int / int, all nullable
+     - What a set started from a template or a generated workout is
+       expected to be — filled in by :doc:`features/progressive_overload`
+       (working sets) or copied from last session (warm-ups/drops), *not*
+       written into the real entered columns above. The set row shows
+       these as ghost (placeholder) text. Completing the set
+       (``PATCH /api/sets/:id {completed: true}``) copies whichever of
+       ``weight``/``reps``/``duration_seconds`` are still null from these,
+       then clears all four — so a completed set never has both a real
+       and a planned value at once. A **blank** workout's sets are the
+       one case that never gets planned values (nothing populates them),
+       so they fall back to plain "last time" ghost text computed
+       client-side instead.
+   * - planned_is_progressed
+     - bool, default false
+     - ``True`` only when the ``planned_*`` values above came from
+       progressive overload actually computing a next weight/reps, not a
+       plain copy (warm-ups, drops, progression off, or no earlier
+       session to progress from). Cleared alongside the ``planned_*``
+       fields when the set is completed. Drives the ghost text's color
+       and the small "P" badge — see :doc:`features/progressive_overload`.
    * - rpe
      - decimal, nullable
      - Optional rate-of-perceived-exertion, 1-10 in 0.5 increments
@@ -432,8 +565,21 @@ Singleton row (``id = 1``), created on first app boot.
      - int
      - App-wide rest timer default (seeded to 90s)
    * - theme
-     - enum(``system``/``light``/``dark``)
+     - enum(``system``/``light``/``dark``/``green``/``pink``)
      -
+   * - progression_method
+     - enum(``double``/``linear``/``off``), default ``double``
+     - See :doc:`features/progressive_overload`
+   * - experience
+     - enum(``novice``/``intermediate``), default ``intermediate``
+     - Stored, not yet read by the progression calculation
+   * - load_step_lb / load_step_kg
+     - float, default 5.0 / 2.5
+     - How much weight progression adds at a time, per unit
+   * - default_rep_range
+     - string(12), default ``"8-12"``
+     - Used by progression for any ``TemplateExercise`` whose own
+       ``target_reps`` is null
 
 Set tracking types
 -------------------
@@ -491,3 +637,10 @@ Business rules
   *displayed* (a stored ``lbs`` set is converted for display, not
   rewritten); new sets are recorded in whatever unit was active when
   logged.
+- **Per-exercise PRs and the per-muscle strength score are two separate
+  pipelines that both use the Epley formula, computed differently.** PRs
+  (above, :doc:`api/stats`) are the best-ever raw value for one exercise,
+  forever. The strength score (:doc:`features/strength_score`) is a
+  per-muscle, per-session ratio against a recent rolling baseline, pooled
+  across every exercise that works that muscle. A new PR and a below-1.0
+  strength score can happen in the same workout, and both are correct.

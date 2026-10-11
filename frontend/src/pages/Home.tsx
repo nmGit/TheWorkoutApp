@@ -11,6 +11,7 @@ import { StrengthMapThumb } from '../components/WorkoutMuscles'
 import { StrengthChart } from '../components/StrengthChart'
 import { RecencyCard } from '../components/RecencyCard'
 import { GenerateWorkout } from '../components/GenerateWorkout'
+import { BodyweightLog } from '../components/BodyweightLog'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -40,7 +41,21 @@ export function HomePage() {
 
   return (
     <div className="space-y-4">
-      <PageTitle>WorkoutApp</PageTitle>
+      <PageTitle
+        action={
+          <a
+            href="/docs/overview.html"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        }
+      >
+        WorkoutApp
+      </PageTitle>
 
       {activeWorkout ? (
         <Card className="flex items-center justify-between border-accent bg-accent/5">
@@ -141,6 +156,22 @@ export function HomePage() {
         >
           View all history →
         </Link>
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Body weight</h2>
+          <a
+            href="/docs/features/bodyweight_and_settings.html#body-weight-log"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's body weight section"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        </div>
+        <BodyweightLog />
       </div>
 
       {dashboard && (

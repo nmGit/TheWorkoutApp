@@ -43,6 +43,25 @@ function plannedWeight(set: WorkoutSet, weightUnit: WeightUnit): string {
   return (Math.round(converted * 100) / 100).toString()
 }
 
+type Tone = 'up' | 'down' | null
+
+/** Up if `planned` is more than `previous`, down if less, otherwise no tone (including when
+ * either value is unknown -- a plain copy, same as last time, is never colored). */
+function tone(planned: number | null, previous: number | null): Tone {
+  if (planned === null || previous === null) return null
+  if (planned > previous) return 'up'
+  if (planned < previous) return 'down'
+  return null
+}
+
+/** The ghost text's color: muted green when progressive overload raised this field over last
+ * time, muted amber when it lowered it, the ordinary muted grey otherwise. */
+function tonePlaceholderClass(t: Tone): string {
+  if (t === 'up') return 'placeholder:text-success/70'
+  if (t === 'down') return 'placeholder:text-amber-600/70'
+  return 'placeholder:text-muted'
+}
+
 export function SetRow({ set, index, trackingType, weightUnit, previousSet, restGhostSeconds = null, onChange, onToggleComplete, onDelete }: Props) {
   const [weight, setWeight] = useState(() => displayWeight(set, weightUnit))
   const [reps, setReps] = useState(set.reps?.toString() ?? '')
@@ -50,6 +69,15 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
   // Planned values show as ghost text (placeholders), so an empty field stays empty until typed in.
   const plannedWeightText = plannedWeight(set, weightUnit) || (previousSet && displayWeight(previousSet, weightUnit)) || '-'
   const plannedRepsText = set.planned_reps?.toString() ?? (previousSet?.reps != null ? previousSet.reps.toString() : 'reps')
+  // Ghost text is tinted when progressive overload actually moved this field from last time's
+  // value for this same set -- a plain copy (no progression, or a warm-up/drop) has nothing to
+  // compare differently, so it stays neutral.
+  const previousWeightNum =
+    previousSet?.weight != null ? Math.round(convertWeight(previousSet.weight, previousSet.weight_unit, weightUnit) * 100) / 100 : null
+  const plannedWeightNum =
+    set.planned_weight !== null ? Math.round(convertWeight(set.planned_weight, set.planned_weight_unit, weightUnit) * 100) / 100 : null
+  const weightTone = tone(plannedWeightNum, previousWeightNum)
+  const repsTone = tone(set.planned_reps, previousSet?.reps ?? null)
   const plannedDurationText =
     set.planned_duration_seconds?.toString() ?? (previousSet?.duration_seconds != null ? previousSet.duration_seconds.toString() : 'sec')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -126,6 +154,14 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
         <span className="text-sm font-medium text-muted">{index + 1}</span>
         {set.is_warmup && <span className="text-[9px] font-semibold uppercase text-amber-500">W</span>}
         {set.is_dropset && <span className="text-[9px] font-semibold uppercase text-accent">D</span>}
+        {set.planned_is_progressed && (
+          <span
+            className="text-[9px] font-semibold uppercase text-success"
+            title="This set's ghost values come from progressive overload"
+          >
+            P
+          </span>
+        )}
       </div>
 
       {showWeight && (
@@ -136,7 +172,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
           placeholder={plannedWeightText}
           onChange={(e) => setWeight(e.target.value)}
           onBlur={commitWeight}
-          className="h-10 w-[52px] rounded-md border border-border bg-bg px-1.5 text-center text-sm tabular-nums placeholder:text-muted"
+          className={`h-10 w-[52px] rounded-md border border-border bg-bg px-1.5 text-center text-sm tabular-nums ${tonePlaceholderClass(weightTone)}`}
         />
       )}
       {showWeight && <span className="text-xs text-muted">{weightUnit}</span>}
@@ -150,7 +186,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
           aria-label="reps"
           onChange={(e) => setReps(e.target.value)}
           onBlur={commitReps}
-          className="h-10 w-[52px] rounded-md border border-border bg-bg px-1.5 text-center text-sm tabular-nums placeholder:text-muted"
+          className={`h-10 w-[52px] rounded-md border border-border bg-bg px-1.5 text-center text-sm tabular-nums ${tonePlaceholderClass(repsTone)}`}
         />
       )}
       {showDuration && (

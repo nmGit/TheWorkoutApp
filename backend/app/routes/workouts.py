@@ -11,7 +11,7 @@ from app.models.template import WorkoutTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import serialize_set, serialize_workout
 from app.services.dates import local_midnight_utc
-from app.services.sets_plan import plan_sets
+from app.services.sets_plan import make_planned_sets, plan_sets
 from app.services.generated_v2 import score_series_v2, strength_for_workout
 from app.services.strength import completed_workouts
 from app.validation import ApiError
@@ -136,20 +136,7 @@ def start_workout():
             )
             db.session.add(we)
             db.session.flush()
-            for position, planned in enumerate(plan_sets(te)):
-                db.session.add(
-                    WorkoutSet(
-                        workout_exercise_id=we.id,
-                        position=position,
-                        completed=False,
-                        is_warmup=planned["is_warmup"],
-                        is_dropset=planned["is_dropset"],
-                        planned_weight=planned["weight"],
-                        planned_weight_unit=planned["weight_unit"],
-                        planned_reps=planned["reps"],
-                        planned_duration_seconds=planned["duration_seconds"],
-                    )
-                )
+            db.session.add_all(make_planned_sets(we.id, plan_sets(te)))
     else:
         workout = Workout(name="Workout")
         db.session.add(workout)
@@ -374,6 +361,7 @@ def update_set(set_id):
         if s.duration_seconds is None:
             s.duration_seconds = s.planned_duration_seconds
         s.planned_weight = s.planned_weight_unit = s.planned_reps = s.planned_duration_seconds = None
+        s.planned_is_progressed = False
 
     db.session.commit()
     return jsonify(serialize_set(s))

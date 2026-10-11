@@ -34,7 +34,21 @@ export function HistoryPage() {
 
   return (
     <div className="space-y-4">
-      <PageTitle>History</PageTitle>
+      <PageTitle
+        action={
+          <a
+            href="/docs/features/history_and_analytics.html#workout-history"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's history section"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        }
+      >
+        History
+      </PageTitle>
 
       <Card>
         <Heatmap trainedDays={trainedDays} />

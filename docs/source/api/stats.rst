@@ -30,5 +30,10 @@ Stats
    across all exercises.
 
 ``GET /api/stats/bodyweight``
-   Body weight series for the trend sparkline/chart. Query param
-   ``range`` as above.
+   Body weight series. Query param ``range`` as above. Currently unused
+   by the frontend — the home dashboard's body-weight chart
+   (:doc:`../features/bodyweight_and_settings`) builds its points
+   client-side from ``GET /api/bodyweight``'s raw entries instead, so
+   every entry (not just this endpoint's range) is available to delete
+   from the same view. A candidate for removal, or for the chart to
+   switch to it if server-side range filtering turns out to matter.

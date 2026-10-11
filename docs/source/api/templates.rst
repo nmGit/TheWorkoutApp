@@ -8,8 +8,10 @@ Templates
 
 ``POST /api/templates``
    Create a template. Body: ``name`` (required), ``notes``, ``exercises``
-   (array of ``{exercise_id, target_sets, target_reps, target_weight}``,
-   in order).
+   (array of ``{exercise_id, target_sets, warmup_sets, drop_sets,
+   target_reps, target_weight}``, in order). ``target_reps`` is this
+   exercise's progressive-overload rep-range override (e.g. ``"8-12"``),
+   not a literal per-set target — see :doc:`../features/progressive_overload`.
 
 ``POST /api/templates/from-workout/:workoutId``
    Create a template from a completed workout, per

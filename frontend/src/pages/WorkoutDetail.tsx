@@ -42,7 +42,21 @@ export function WorkoutDetailPage() {
 
   return (
     <div className="space-y-4">
-      <PageTitle>{workout.name}</PageTitle>
+      <PageTitle
+        action={
+          <a
+            href="/docs/features/workout_logging.html#editing-past-workouts"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's workout history section"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        }
+      >
+        {workout.name}
+      </PageTitle>
       <p className="-mt-3 text-sm text-muted">
         {[formatDate(workout.started_at), formatWorkoutDuration(workout.started_at, workout.completed_at)]
           .filter(Boolean)

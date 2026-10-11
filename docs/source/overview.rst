@@ -12,10 +12,15 @@ questions a lifter asks around a workout:
    an automatic rest timer.
 3. **What have I done before on this exercise?** — last time's weights/reps
    shown inline while logging, plus a full history.
-4. **Am I actually progressing?** — per-exercise charts and personal
-   records, built from logged data, not manual bookkeeping.
+4. **Am I actually progressing?** — per-exercise charts, personal records,
+   and a per-muscle strength score, built from logged data, not manual
+   bookkeeping.
+5. **What should I train today?** — a workout generated from whichever
+   muscles have gone longest without training, with loads and reps that
+   progress session to session on their own (see
+   :doc:`features/generated_workouts` and :doc:`features/progressive_overload`).
 
-Everything else in the product is in service of those four questions. This
+Everything else in the product is in service of those questions. This
 is a single-user, self-hosted tool first; multi-user support is a
 non-goal for v1 (see :ref:`overview:Non-goals`).
 
@@ -101,4 +106,6 @@ Explicitly out of scope for v1, to keep the product coherent:
 Body-weight tracking is **in scope** (see
 :doc:`features/bodyweight_and_settings`) since it's low-cost, relational to
 progress analytics (e.g. relative strength), and present in the source
-workout history being imported.
+workout history being imported. It lives on the home dashboard, not in
+Settings, since it's a log you add to regularly rather than a preference
+you set once.
