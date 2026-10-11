@@ -134,6 +134,11 @@ one non-JSON, non-SPA route — static HTML (see "Documentation" below).
      - Builds a template-started or generated workout's planned sets,
        applying progressive overload to the working sets. See
        :doc:`features/progressive_overload`.
+   * - ``supersets.py``
+     - Pairing two adjacent exercises into a
+       :doc:`superset <features/supersets>`, keeping that pairing valid
+       under reordering, and forcing equal set counts between them. Used
+       by both ``routes/templates.py`` and ``routes/workouts.py``.
    * - ``muscle_catalog.py``
      - Resolves a dataset's raw muscle wording to a canonical ``Muscle``
        slug (used only when seeding/editing exercises' muscles).

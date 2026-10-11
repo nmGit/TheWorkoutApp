@@ -42,8 +42,10 @@ Layout, top to bottom, matching Strong's proven structure:
 2. **Exercise blocks**, in order. Each block has a small toolbar in its
    header — exercise name on the left, then a "view exercise page" button
    (jumps to :doc:`exercise_library`'s detail screen — chart, PRs, and
-   full history — for that exercise) and a "Remove" button on the right —
-   plus:
+   full history — for that exercise), a "⋯" menu that includes pairing it
+   with the next block into a :doc:`superset <supersets>` (shown by a
+   blue bar along the left edge of both once paired), and a "Remove"
+   button — plus:
 
    - A row per set: set number, weight input, reps input, a checkmark to
      mark the set ``completed``. A field with nothing entered yet shows
@@ -61,9 +63,13 @@ Layout, top to bottom, matching Strong's proven structure:
      is never progressed). The two are mutually exclusive — marking one
      clears the other — and "+ Add set" never copies the flag, so a set
      added after a drop set is a regular set.
-   - "+ Add set" appends a set, pre-filled by copying the previous set's
-     values (fast repeat-set entry, the single most common action in a
-     workout).
+   - "+ Add set" appends a set. If the exercise already has a set this
+     session, the new one copies its values (fast repeat-set entry, the
+     single most common action in a workout); otherwise it gets a
+     progressive-overload suggestion instead, the same as a set started
+     from a template would. On a :doc:`superset <supersets>` member, it
+     also adds a set to the paired exercise, keeping both at the same
+     count; deleting a set does the same in reverse.
 
    The same header toolbar (view-exercise button included) appears on a
    completed workout's exercise blocks too — see
@@ -109,4 +115,8 @@ Editing past workouts
 A completed workout's detail view is editable in place (fix a typo'd
 weight after the fact) — the same set-row components as the active screen,
 without the rest timer wiring. There is no separate "edit mode": any
-completed workout can always be amended.
+completed workout can always be amended. The workout's **name** is also
+editable there, the same inline-on-blur field as the active workout
+screen's header (shared as ``components/NameEditor.tsx``) — useful for
+renaming a workout well after the fact, e.g. once you know how a session
+actually went, not just whatever it was called when you started it.

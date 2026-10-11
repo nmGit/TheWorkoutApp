@@ -9,6 +9,7 @@ from app.models.exercise import EQUIPMENT_TYPES, TRACKING_TYPES, MuscleGroup
 from app.models.exercise_template import ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import (
+    _num,
     canonical_muscle_slug,
     muscle_swatch,
     serialize_exercise_template,
@@ -17,6 +18,7 @@ from app.serializers import (
 )
 from app.services.dates import local_date
 from app.services.exercise_templates import GROUP_MUSCLES
+from app.services.sets_plan import SetPlanSpec, plan_sets
 from app.validation import ApiError
 
 bp = Blueprint("exercise_templates", __name__, url_prefix="/api")
@@ -350,3 +352,35 @@ def exercise_template_history(template_id):
     ]
 
     return jsonify({"total": total, "items": items})
+
+
+@bp.get("/exercise-templates/<int:exercise_id>/plan-preview")
+def exercise_template_plan_preview(exercise_id):
+    """What starting a workout with this exercise would plan right now, given a hypothetical set
+    plan (the template editor's current, possibly unsaved, set counts and rep range) -- the same
+    progressive-overload calculation plan_sets uses to fill a real workout, run without creating
+    one. Query params mirror TemplateExercise: warmup_sets, target_sets, drop_sets, target_reps."""
+    if db.session.get(ExerciseTemplate, exercise_id) is None:
+        raise ApiError("Exercise template not found", 404)
+
+    spec = SetPlanSpec(
+        exercise_id=exercise_id,
+        target_reps=request.args.get("target_reps") or None,
+        warmup_sets=request.args.get("warmup_sets", default=0, type=int),
+        target_sets=request.args.get("target_sets", default=1, type=int),
+        drop_sets=request.args.get("drop_sets", default=0, type=int),
+    )
+    return jsonify(
+        [
+            {
+                "is_warmup": p["is_warmup"],
+                "is_dropset": p["is_dropset"],
+                "weight": _num(p["weight"]),
+                "weight_unit": p["weight_unit"],
+                "reps": p["reps"],
+                "duration_seconds": p["duration_seconds"],
+                "is_progressed": p["is_progressed"],
+            }
+            for p in plan_sets(spec)
+        ]
+    )

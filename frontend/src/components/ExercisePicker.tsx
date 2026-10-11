@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { useCreateExerciseTemplate, useExerciseTemplates, useMuscleGroups } from '../api/exerciseTemplates'
 import type { ExerciseTemplate } from '../types'
+import { MuscleGroupFilters } from './MuscleGroupFilters'
 import { Button } from './ui'
 
 interface Props {
@@ -11,10 +12,12 @@ interface Props {
 export function ExercisePicker({ onSelect, onClose }: Props) {
   const [query, setQuery] = useState('')
   const [muscleGroupId, setMuscleGroupId] = useState<number | undefined>(undefined)
+  const [muscle, setMuscle] = useState<string | undefined>(undefined)
   const { data: groups } = useMuscleGroups()
   const { data: results, isLoading } = useExerciseTemplates({
     q: query || undefined,
     muscleGroupId,
+    muscle,
     limit: 40,
   })
   const createExercise = useCreateExerciseTemplate()
@@ -65,21 +68,14 @@ export function ExercisePicker({ onSelect, onClose }: Props) {
             placeholder="Search exercises…"
             className="h-11 w-full rounded-lg border border-border bg-bg px-3 text-sm"
           />
-          <div className="flex flex-wrap gap-1.5">
-            <FilterChip active={muscleGroupId === undefined} onClick={() => setMuscleGroupId(undefined)} title="Show all muscle groups">
-              All
-            </FilterChip>
-            {groups?.map((g) => (
-              <FilterChip
-                key={g.id}
-                active={muscleGroupId === g.id}
-                onClick={() => setMuscleGroupId(g.id)}
-                title={`Filter to ${g.name}`}
-              >
-                {g.name}
-              </FilterChip>
-            ))}
-          </div>
+          <MuscleGroupFilters
+            muscleGroupId={muscleGroupId}
+            muscle={muscle}
+            onChange={(group, m) => {
+              setMuscleGroupId(group)
+              setMuscle(m)
+            }}
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">
@@ -136,29 +132,5 @@ export function ExercisePicker({ onSelect, onClose }: Props) {
         </div>
       </div>
     </div>
-  )
-}
-
-function FilterChip({
-  active,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  title?: string
-  children: ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`rounded-full px-3 py-1 text-xs font-medium ${
-        active ? 'bg-accent text-accent-fg' : 'bg-border/50 text-muted'
-      }`}
-    >
-      {children}
-    </button>
   )
 }

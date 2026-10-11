@@ -3,12 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useExerciseTemplate } from '../api/exerciseTemplates'
 import { useExerciseStats } from '../api/stats'
 import { useCreateTemplateFromWorkout } from '../api/templates'
-import { useDeleteSet, useDeleteWorkout, useUpdateSet, useWorkout } from '../api/workouts'
+import { useDeleteSet, useDeleteWorkout, useUpdateSet, useUpdateWorkout, useWorkout } from '../api/workouts'
 import { SetRow } from '../components/SetRow'
 import { ExerciseCard } from '../components/ExerciseCard'
 import { ExerciseList } from '../components/ExerciseList'
-import { ExerciseNotesMenu, ExerciseNotesPanel, type NoteKind } from '../components/ExerciseNotes'
-import { Badge, Button, LoadingState, PageTitle, ViewExerciseButton } from '../components/ui'
+import { ExerciseMenu } from '../components/ExerciseMenu'
+import { ExerciseNotesPanel, noteMenuItems, type NoteKind } from '../components/ExerciseNotes'
+import { NameEditor } from '../components/NameEditor'
+import { Badge, Button, LoadingState, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { formatDate, formatWorkoutDuration } from '../lib/format'
 import type { Workout, WorkoutExercise } from '../types'
@@ -20,6 +22,7 @@ export function WorkoutDetailPage() {
   const navigate = useNavigate()
   const id = Number(workoutId)
   const { data: workout, isLoading } = useWorkout(id)
+  const updateWorkout = useUpdateWorkout(id)
   const createTemplate = useCreateTemplateFromWorkout()
   const deleteWorkout = useDeleteWorkout()
   const { deleteWithUndo } = useUndo()
@@ -42,27 +45,26 @@ export function WorkoutDetailPage() {
 
   return (
     <div className="space-y-4">
-      <PageTitle
-        action={
-          <a
-            href="/docs/features/workout_logging.html#editing-past-workouts"
-            target="_blank"
-            rel="noreferrer"
-            title="Open the user manual's workout history section"
-            className="text-xs font-medium text-muted hover:text-accent"
-          >
-            Help
-          </a>
-        }
-      >
-        {workout.name}
-      </PageTitle>
-      <p className="-mt-3 text-sm text-muted">
-        {[formatDate(workout.started_at), formatWorkoutDuration(workout.started_at, workout.completed_at)]
-          .filter(Boolean)
-          .join(' · ')}
-        {workout.template_name ? ` · from ${workout.template_name}` : ''}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <NameEditor workout={workout} onSave={(name) => updateWorkout.mutate({ name })} />
+          <p className="text-sm text-muted">
+            {[formatDate(workout.started_at), formatWorkoutDuration(workout.started_at, workout.completed_at)]
+              .filter(Boolean)
+              .join(' · ')}
+            {workout.template_name ? ` · from ${workout.template_name}` : ''}
+          </p>
+        </div>
+        <a
+          href="/docs/features/workout_logging.html#editing-past-workouts"
+          target="_blank"
+          rel="noreferrer"
+          title="Open the user manual's workout history section"
+          className="shrink-0 text-xs font-medium text-muted hover:text-accent"
+        >
+          Help
+        </a>
+      </div>
 
       <WorkoutMusclesHeader workoutId={workout.id} muscles={workout.muscles} />
 
@@ -114,7 +116,7 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
       actions={
         <>
           <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
-          <ExerciseNotesMenu onChoose={setEditingNote} />
+          <ExerciseMenu label="Exercise actions" items={noteMenuItems(setEditingNote)} />
         </>
       }
       notes={

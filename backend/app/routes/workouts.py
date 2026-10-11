@@ -11,9 +11,15 @@ from app.models.template import WorkoutTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import serialize_set, serialize_workout
 from app.services.dates import local_midnight_utc
-from app.services.sets_plan import make_planned_sets, plan_sets
+from app.services.sets_plan import SetPlanSpec, make_planned_sets, plan_sets
 from app.services.generated_v2 import score_series_v2, strength_for_workout
 from app.services.strength import completed_workouts
+from app.services.supersets import (
+    equalize_workout_superset_sets,
+    link_pair,
+    normalize_superset_groups,
+    unlink,
+)
 from app.validation import ApiError
 
 bp = Blueprint("workouts", __name__, url_prefix="/api")
@@ -268,22 +274,53 @@ def reorder_workout_exercises(workout_id):
     for position, we_id in enumerate(ids):
         by_id[we_id].position = position
 
+    # A reorder can split a superset apart (dissolving it) or, if it happens to land two members
+    # back together, nothing more needs equalizing since they were already equal.
+    equalize_workout_superset_sets(workout)
     db.session.commit()
     return jsonify(serialize_workout(workout))
 
 
 @bp.patch("/workouts/<int:workout_id>/exercises/<int:workout_exercise_id>")
 def update_workout_exercise(workout_id, workout_exercise_id):
-    """Edits what's specific to this instance of the exercise, currently its notes.
-    The template's notes (shared by every instance) are edited on the exercise."""
+    """Edits what's specific to this instance of the exercise: its notes, and un-pairing it from
+    a superset. The template's notes (shared by every instance) are edited on the exercise.
+    Pairing two exercises *into* a superset is POST .../exercises/link instead -- both sides need
+    to change together in one transaction, which a single exercise's PATCH can't do."""
     we = db.session.get(WorkoutExercise, workout_exercise_id)
     if we is None or we.workout_id != workout_id:
         raise ApiError("Workout exercise not found", 404)
     body = request.get_json(force=True) or {}
     if "notes" in body:
         we.notes = (body["notes"] or "").strip() or None
+    if "superset_group" in body:
+        if body["superset_group"] is not None:
+            raise ApiError("Use POST /workouts/:id/exercises/link to form a superset pair", 400)
+        unlink(we.workout.exercises, we.id)
     db.session.commit()
     return jsonify(serialize_workout(we.workout))
+
+
+@bp.post("/workouts/<int:workout_id>/exercises/link")
+def link_workout_exercises(workout_id):
+    """Pairs two of this workout's exercises into a superset -- forcing the same set count on
+    both from this point on (see services/supersets.py). They must be adjacent; the UI only ever
+    offers this between neighboring exercise cards, so a pairing is always visually a block."""
+    workout = db.session.get(Workout, workout_id)
+    if workout is None:
+        raise ApiError("Workout not found", 404)
+    body = request.get_json(force=True) or {}
+    by_id = {we.id: we for we in workout.exercises}
+    first, second = by_id.get(body.get("first_id")), by_id.get(body.get("second_id"))
+    if first is None or second is None:
+        raise ApiError("first_id and second_id must be exercises in this workout", 400)
+    if abs(first.position - second.position) != 1:
+        raise ApiError("Only adjacent exercises can be paired into a superset", 400)
+
+    link_pair(workout.exercises, first.id, second.id)
+    equalize_workout_superset_sets(workout)
+    db.session.commit()
+    return jsonify(serialize_workout(workout))
 
 
 @bp.delete("/workouts/<int:workout_id>/exercises/<int:workout_exercise_id>")
@@ -291,7 +328,12 @@ def remove_workout_exercise(workout_id, workout_exercise_id):
     we = db.session.get(WorkoutExercise, workout_exercise_id)
     if we is None or we.workout_id != workout_id:
         raise ApiError("Workout exercise not found", 404)
+    workout = we.workout
     db.session.delete(we)
+    db.session.flush()
+    # Removing the middle of a 3+ superset can leave the rest still contiguous (fine, stays
+    # linked); normalize in case it doesn't.
+    normalize_superset_groups(sorted(workout.exercises, key=lambda e: e.position))
     db.session.commit()
     return "", 204
 
@@ -304,6 +346,31 @@ def add_set(workout_exercise_id):
     body = request.get_json(silent=True) or {}
 
     previous = we.sets[-1] if we.sets else None
+    previous_is_real = previous is not None and (
+        previous.weight is not None or previous.reps is not None or previous.duration_seconds is not None
+    )
+    if previous_is_real:
+        # Fast repeat-set entry: the previous set already has something real to copy (below).
+        planned = None
+    elif previous is not None:
+        # The previous set is itself still just a suggestion (added but not yet filled in or
+        # completed) -- carry the same suggestion forward, so a run of sets added before any of
+        # them are touched all show the same planned value, same as a template start's working
+        # sets all do. Without this, only the first of the run would (previous.weight/reps are
+        # still null, so there'd be nothing to copy and no suggestion to carry).
+        planned = {
+            "weight": previous.planned_weight,
+            "weight_unit": previous.planned_weight_unit,
+            "reps": previous.planned_reps,
+            "duration_seconds": previous.planned_duration_seconds,
+            "is_progressed": previous.planned_is_progressed,
+        }
+    else:
+        # The exercise's first set this session (e.g. just added mid-workout, not started from
+        # a template) -- nothing real to copy from within this workout yet, so suggest it the
+        # same way starting from a template does: progressive overload from the exercise's last
+        # session, as a planned (ghost) value, not a real one (see sets_plan.py).
+        planned = plan_sets(SetPlanSpec(exercise_id=we.exercise_id, target_sets=1))[0]
     new_set = WorkoutSet(
         workout_exercise_id=we.id,
         position=len(we.sets),
@@ -323,8 +390,22 @@ def add_set(workout_exercise_id):
         # so a later change to one set's rest carries to the sets after it.
         rest_seconds=body.get("rest_seconds"),
         completed=body.get("completed", False),
+        planned_weight=planned["weight"] if planned else None,
+        planned_weight_unit=planned["weight_unit"] if planned else None,
+        planned_reps=planned["reps"] if planned else None,
+        planned_duration_seconds=planned["duration_seconds"] if planned else None,
+        planned_is_progressed=planned["is_progressed"] if planned else False,
     )
     db.session.add(new_set)
+    db.session.flush()
+    if we.superset_group is not None:
+        # A superset's members always have the same set count -- adding one here adds a
+        # (blank) one to every other member too, rather than letting them drift apart.
+        # `we.sets` was loaded before the flush above, so it needs refreshing to count the
+        # set just added -- setting workout_exercise_id directly (rather than appending to
+        # the collection) doesn't update it in place.
+        db.session.expire(we, ["sets"])
+        equalize_workout_superset_sets(we.workout)
     db.session.commit()
     return jsonify(serialize_set(new_set)), 201
 
@@ -372,6 +453,17 @@ def delete_set(set_id):
     s = db.session.get(WorkoutSet, set_id)
     if s is None:
         raise ApiError("Set not found", 404)
+    we = s.workout_exercise
+    group, position = we.superset_group, s.position
     db.session.delete(s)
+    if group is not None:
+        # Keep the superset's members at the same set count: deleting a round removes it from
+        # every member, not just the one it was deleted from.
+        for sibling in we.workout.exercises:
+            if sibling.id == we.id or sibling.superset_group != group:
+                continue
+            sibling_set = next((x for x in sibling.sets if x.position == position), None)
+            if sibling_set is not None:
+                db.session.delete(sibling_set)
     db.session.commit()
     return "", 204

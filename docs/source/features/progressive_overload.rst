@@ -8,17 +8,23 @@ automatically, without you tracking it yourself.
 Where it applies
 ------------------
 
-Progressive overload runs whenever a workout's exercises come with a
-working-set count to fill: starting from a **template**
-(``POST /api/workouts {template_id}``) and :doc:`generating a workout
-<generated_workouts>` (``POST /api/workouts/generated``) both get it. A
-**blank** workout is the one way to skip it — exercises added to a blank
-workout have no planned sets at all, so their set rows just show last
-session's values as ghost text once you focus them (ordinary "what you
-did last time" behavior, see :doc:`workout_logging`), with no computed
-*next* weight or rep count. A generated workout's exercises always use
-the Settings default rep range (below) rather than a per-exercise
-override, since there's no template exercise to carry one.
+Progressive overload runs whenever a working set is about to start:
+starting a workout from a **template** (``POST /api/workouts
+{template_id}``) and :doc:`generating a workout <generated_workouts>`
+(``POST /api/workouts/generated``) plan every exercise's working sets
+this way up front. It also runs for an exercise's very first set
+whenever it's added one at a time — a **blank** workout's exercises, or
+any exercise added mid-workout to a workout that's already running
+(including a template-started or generated one): the first "+ Add set"
+for that exercise computes the same suggestion a template start would,
+from the exercise's last session, rather than leaving it bare just
+because there's no earlier set *in this session* to copy from yet. Only
+an exercise's *second* and later sets fall back to plain "what you did
+last time" behavior (copying the first set, see :doc:`workout_logging`)
+— by then there's something in this session to copy instead. A generated
+workout's exercises always use the Settings default rep range (below)
+rather than a per-exercise override, since there's no template exercise
+to carry one; the same is true for an exercise added one at a time.
 
 Settings → Generated Workouts
 --------------------------------

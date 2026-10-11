@@ -166,6 +166,7 @@ def serialize_template_exercise(te):
         "drop_sets": te.drop_sets,
         "target_reps": te.target_reps,
         "target_weight": _num(te.target_weight),
+        "superset_group": te.superset_group,
     }
 
 
@@ -235,6 +236,7 @@ def serialize_workout_exercise(we, include_sets=True):
         "tracking_type": we.exercise.tracking_type if we.exercise else None,
         "position": we.position,
         "notes": we.notes,
+        "superset_group": we.superset_group,
     }
     if include_sets:
         data["sets"] = [serialize_set(s) for s in we.sets]

@@ -4,12 +4,15 @@ import { useStrengthHistory } from '../api/workouts'
 import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
 import { ExerciseCard } from '../components/ExerciseCard'
 import { ExerciseList } from '../components/ExerciseList'
+import { ExerciseMenu } from '../components/ExerciseMenu'
 import { ExercisePicker } from '../components/ExercisePicker'
 import { PlanSets } from '../components/PlanSets'
+import { SupersetBar } from '../components/SupersetBar'
 import { TemplateMusclesHeader } from '../components/WorkoutMuscles'
 import { Button, DragHandle, LoadingState, PageTitle, ViewExerciseButton } from '../components/ui'
 import { useUndo } from '../context/UndoContext'
 import { useDragReorder } from '../hooks/useDragReorder'
+import { isPaired, toggleSupersetLink } from '../lib/supersets'
 import type { ExerciseTemplate, TemplateExercise } from '../types'
 
 export function TemplateEditorPage() {
@@ -22,6 +25,7 @@ export function TemplateEditorPage() {
   const { showUndo } = useUndo()
 
   const [name, setName] = useState('')
+  const [notes, setNotes] = useState('')
   const [exercises, setExercises] = useState<TemplateExercise[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
 
@@ -34,6 +38,7 @@ export function TemplateEditorPage() {
   useEffect(() => {
     if (template) {
       setName(template.name)
+      setNotes(template.notes ?? '')
       setExercises(template.exercises)
     }
   }, [template])
@@ -47,6 +52,7 @@ export function TemplateEditorPage() {
       warmup_sets: e.warmup_sets,
       drop_sets: e.drop_sets,
       target_reps: e.target_reps,
+      superset_group: e.superset_group,
     }))
     updateTemplate.mutate({ exercises: payload })
   }
@@ -81,6 +87,7 @@ export function TemplateEditorPage() {
         drop_sets: 0,
         target_reps: null,
         target_weight: null,
+        superset_group: null,
       },
     ])
     setPickerOpen(false)
@@ -106,33 +113,70 @@ export function TemplateEditorPage() {
         placeholder="Template name"
       />
 
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        onBlur={() => {
+          const trimmed = notes.trim()
+          if (trimmed !== (template.notes ?? '')) {
+            updateTemplate.mutate({ notes: trimmed || null })
+          }
+        }}
+        rows={3}
+        className="w-full resize-y rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+        placeholder="Program notes: rest periods, progression rules, warm-up protocol…"
+      />
+
       <TemplateMusclesHeader muscles={template.muscles} latest={latest} />
 
       <ExerciseList
         items={exercises}
         dragReorder={dragReorder}
         className="space-y-2"
-        renderCard={(ex, i) => (
-          <ExerciseCard
-            title={ex.exercise_name}
-            dragging={dragReorder.isBeingDragged(ex.id)}
-            leading={<DragHandle handleProps={dragReorder.getHandleProps(ex.id)} isDragging={dragReorder.isBeingDragged(ex.id)} />}
-            actions={
-              <>
-                <ViewExerciseButton exerciseId={ex.exercise_id} />
-                <button
-                  onClick={() => removeExercise(i)}
-                  title={`Remove ${ex.exercise_name} from this template`}
-                  className="ml-1 px-1 text-xs text-muted hover:text-danger"
+        renderCard={(ex, i) => {
+          const linkedBelow = isPaired(ex, exercises[i + 1])
+          return (
+            <div className="flex items-stretch gap-2">
+              <SupersetBar linkedAbove={isPaired(exercises[i - 1], ex)} linkedBelow={linkedBelow} />
+              <div className="min-w-0 flex-1">
+                <ExerciseCard
+                  title={ex.exercise_name}
+                  dragging={dragReorder.isBeingDragged(ex.id)}
+                  leading={<DragHandle handleProps={dragReorder.getHandleProps(ex.id)} isDragging={dragReorder.isBeingDragged(ex.id)} />}
+                  actions={
+                    <>
+                      <ViewExerciseButton exerciseId={ex.exercise_id} />
+                      <ExerciseMenu
+                        items={[
+                          ...(i < exercises.length - 1
+                            ? [
+                                {
+                                  label: linkedBelow ? 'Remove from superset' : 'Superset with next',
+                                  title: linkedBelow
+                                    ? 'Unlink this exercise and the next one'
+                                    : 'Pair this exercise with the next one, forcing the same working-set count',
+                                  onClick: () => persist(toggleSupersetLink(exercises, i)),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
+                      <button
+                        onClick={() => removeExercise(i)}
+                        title={`Remove ${ex.exercise_name} from this template`}
+                        className="ml-1 px-1 text-xs text-muted hover:text-danger"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  }
                 >
-                  Remove
-                </button>
-              </>
-            }
-          >
-            <PlanSets exercise={ex} onChange={(patch) => updateExercise(i, patch)} />
-          </ExerciseCard>
-        )}
+                  <PlanSets exercise={ex} onChange={(patch) => updateExercise(i, patch)} />
+                </ExerciseCard>
+              </div>
+            </div>
+          )
+        }}
       />
 
       <Button variant="secondary" className="w-full" onClick={() => setPickerOpen(true)} title="Add an exercise to this template">

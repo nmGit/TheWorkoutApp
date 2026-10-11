@@ -98,8 +98,28 @@ export function useDeleteWorkout() {
 export function useUpdateWorkoutExercise(workoutId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ workoutExerciseId, notes }: { workoutExerciseId: number; notes: string }) =>
-      api.patch<Workout>(`/workouts/${workoutId}/exercises/${workoutExerciseId}`, { notes }),
+    mutationFn: ({
+      workoutExerciseId,
+      notes,
+      superset_group,
+    }: {
+      workoutExerciseId: number
+      notes?: string
+      /** Only `null` (un-pair) is accepted here -- pairing goes through useLinkWorkoutExercises,
+       * since it has to change both exercises in one request. */
+      superset_group?: null
+    }) => api.patch<Workout>(`/workouts/${workoutId}/exercises/${workoutExerciseId}`, { notes, superset_group }),
+    onSuccess: () => invalidateWorkout(qc, workoutId),
+  })
+}
+
+/** Pairs two adjacent exercises into a superset -- see services/supersets.py for what that
+ * forces (same set count) and how an existing pairing on either side is broken first. */
+export function useLinkWorkoutExercises(workoutId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ firstId, secondId }: { firstId: number; secondId: number }) =>
+      api.post<Workout>(`/workouts/${workoutId}/exercises/link`, { first_id: firstId, second_id: secondId }),
     onSuccess: () => invalidateWorkout(qc, workoutId),
   })
 }

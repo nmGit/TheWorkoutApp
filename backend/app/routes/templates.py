@@ -5,6 +5,7 @@ from app.models.exercise_template import ExerciseTemplate
 from app.models.template import TemplateExercise, WorkoutTemplate
 from app.models.workout import Workout
 from app.serializers import serialize_template
+from app.services.supersets import normalize_superset_groups, sync_template_superset_sets
 from app.validation import ApiError, require
 
 bp = Blueprint("templates", __name__, url_prefix="/api")
@@ -19,23 +20,29 @@ def list_templates():
 def _apply_exercises(template: WorkoutTemplate, exercises: list[dict]):
     for te in list(template.exercises):
         db.session.delete(te)
+    created = []
     for position, item in enumerate(exercises):
         if not item.get("exercise_id"):
             raise ApiError("Each template exercise requires exercise_id")
         if db.session.get(ExerciseTemplate, item["exercise_id"]) is None:
             raise ApiError(f"Unknown exercise_id {item['exercise_id']}", 404)
-        db.session.add(
-            TemplateExercise(
-                template=template,
-                exercise_id=item["exercise_id"],
-                position=position,
-                target_sets=item.get("target_sets"),
-                warmup_sets=item.get("warmup_sets") or 0,
-                drop_sets=item.get("drop_sets") or 0,
-                target_reps=item.get("target_reps"),
-                target_weight=item.get("target_weight"),
-            )
+        te = TemplateExercise(
+            template=template,
+            exercise_id=item["exercise_id"],
+            position=position,
+            target_sets=item.get("target_sets"),
+            warmup_sets=item.get("warmup_sets") or 0,
+            drop_sets=item.get("drop_sets") or 0,
+            target_reps=item.get("target_reps"),
+            target_weight=item.get("target_weight"),
+            superset_group=item.get("superset_group"),
         )
+        db.session.add(te)
+        created.append(te)
+    # A superset forces its members to the same working-set count -- enforced here, not just
+    # nudged by the UI, so it holds even if a request builds the array some other way.
+    normalize_superset_groups(created)
+    sync_template_superset_sets(created)
 
 
 @bp.post("/templates")
@@ -65,18 +72,22 @@ def create_template_from_workout(workout_id):
     db.session.add(template)
     db.session.flush()
 
+    created = []
     for position, we in enumerate(workout.exercises):
         last_set = we.sets[-1] if we.sets else None
-        db.session.add(
-            TemplateExercise(
-                template=template,
-                exercise_id=we.exercise_id,
-                position=position,
-                target_sets=len(we.sets) or None,
-                target_reps=str(last_set.reps) if last_set and last_set.reps else None,
-                target_weight=last_set.weight if last_set else None,
-            )
+        te = TemplateExercise(
+            template=template,
+            exercise_id=we.exercise_id,
+            position=position,
+            target_sets=len(we.sets) or None,
+            target_reps=str(last_set.reps) if last_set and last_set.reps else None,
+            target_weight=last_set.weight if last_set else None,
+            superset_group=we.superset_group,
         )
+        db.session.add(te)
+        created.append(te)
+    normalize_superset_groups(created)
+    sync_template_superset_sets(created)
     db.session.commit()
     return jsonify(serialize_template(template)), 201
 

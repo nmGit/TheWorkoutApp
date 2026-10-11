@@ -94,6 +94,20 @@ separate rows, and why that was a bug).
    Every ``WorkoutExercise`` block for this exercise, most recent first,
    with its sets nested. Paginated (``limit``/``offset``).
 
+``GET /api/exercise-templates/:id/plan-preview``
+   What starting a workout with this exercise would plan right now —
+   runs the exact same :doc:`progressive overload
+   <../features/progressive_overload>` calculation a real workout start
+   uses (``sets_plan.py:plan_sets``), without creating anything. Query
+   params mirror a ``TemplateExercise``: ``warmup_sets``, ``target_sets``,
+   ``drop_sets`` (each an int, default ``0``/``1``/``0``), ``target_reps``
+   (optional). Returns a bare list of planned sets — the same shape as a
+   ``WorkoutSet``'s ``planned_*`` fields, minus the id/position wrapper
+   since nothing is actually created: ``is_warmup``, ``is_dropset``,
+   ``weight``, ``weight_unit``, ``reps``, ``duration_seconds``,
+   ``is_progressed``. ``404`` if the exercise doesn't exist. Powers the
+   template editor's live preview (:doc:`../features/templates`).
+
 ``GET /api/exercises/:id/stats``
    See :doc:`stats`. Kept at the old ``/api/exercises`` path rather than
    moved, since it's the one endpoint with no real "exercise vs. template"

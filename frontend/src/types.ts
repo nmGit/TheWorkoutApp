@@ -105,6 +105,19 @@ export interface WorkoutSet {
   completed: boolean
 }
 
+/** What plan_sets would produce for an exercise right now, given a hypothetical set plan --
+ * see the /exercise-templates/:id/plan-preview endpoint. Same shape as a planned WorkoutSet,
+ * minus the id/position wrapper, since nothing is actually created. */
+export interface PlanPreviewSet {
+  is_warmup: boolean
+  is_dropset: boolean
+  weight: number | null
+  weight_unit: WeightUnit | null
+  reps: number | null
+  duration_seconds: number | null
+  is_progressed: boolean
+}
+
 export interface WorkoutExercise {
   id: number
   exercise_id: number
@@ -112,6 +125,8 @@ export interface WorkoutExercise {
   tracking_type: TrackingType | null
   position: number
   notes: string | null
+  /** Shared with exactly one other (adjacent) exercise when the two are a superset. */
+  superset_group: number | null
   sets: WorkoutSet[]
 }
 
@@ -182,6 +197,8 @@ export interface TemplateExercise {
   drop_sets: number
   target_reps: string | null
   target_weight: number | null
+  /** Shared with exactly one other (adjacent) exercise when the two are a superset. */
+  superset_group: number | null
 }
 
 export interface WorkoutTemplate {

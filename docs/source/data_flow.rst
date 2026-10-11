@@ -76,6 +76,22 @@ Progressive overload calculation
 7. Convert the result back to the user's display unit and round to 2
    decimals.
 
+Previewing it before starting a workout
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``GET /api/exercise-templates/:id/plan-preview`` (``routes/exercise_templates.py``)
+runs this same ``plan_sets``/``progress_working`` pair on demand, against a
+``SetPlanSpec`` built straight from the request's query params instead of a
+stored ``TemplateExercise`` — so the template editor can show what a
+workout would plan *right now*, including for set counts or a rep range
+that haven't been saved yet, without creating anything. The frontend
+(``components/PlanSets.tsx``, via ``api/exerciseTemplates.ts:useExercisePlanPreview``)
+refetches it on every change to warm-up/working/drop counts or rep range,
+and colors each previewed field by comparing it to the same exercise's
+last session (``lib/progressionTone.ts`` — the exact module the active
+workout screen's ghost text uses, so both color the same value the same
+way from the same rule).
+
 Completing a set
 ------------------
 
@@ -94,6 +110,73 @@ This is why a set can be completed with the checkmark alone, with nothing
 typed: whatever was planned becomes real at that moment. It's also why a
 set can never show both a real and a planned value for the same field —
 step 2 always clears the planned ones.
+
+Adding a set
+---------------
+
+``POST /api/workout-exercises/:id/sets`` (``routes/workouts.py:add_set``):
+
+1. If this exercise already has a set earlier in *this* session, the new
+   one copies its ``weight``/``reps``/``duration_seconds``/
+   ``distance_meters`` as real, entered values (fast repeat-set entry) —
+   except ``rest_seconds``, deliberately left null so it keeps showing
+   ghost text (:doc:`features/rest_timers`).
+2. Otherwise (the exercise's first set this session — a blank workout's
+   exercise, or one added mid-workout to a workout that's already
+   running), there's nothing real to copy yet, so it gets a progressive
+   overload suggestion instead: ``plan_sets(SetPlanSpec(exercise_id=...,
+   target_sets=1))``, written to the new set's ``planned_*`` columns, not
+   its real ones (:doc:`features/progressive_overload`). This is the same
+   ``plan_sets``/``SetPlanSpec`` pairing steps 3-4 above and "generating a
+   workout" below both use.
+3. If this exercise is part of a :doc:`superset <features/supersets>`,
+   ``equalize_workout_superset_sets`` (below) pads its paired exercise up
+   to match, after re-reading this exercise's own set count (it was
+   loaded before the set just added, so it's expired first to pick that
+   up).
+
+Linking a superset
+----------------------
+
+``services/supersets.py`` holds all of this; both templates and
+workouts call into the same functions.
+
+- **Forming a pair** — ``POST /api/workouts/:id/exercises/link {first_id,
+  second_id}`` (``routes/workouts.py:link_workout_exercises``), or, for a
+  template, just sending the same ``superset_group`` value on two
+  adjacent entries in the ``exercises`` array of a normal template save.
+  Either way, ``link_pair``: breaks whatever either exercise was
+  previously paired with (freeing its old partner back to
+  ``superset_group: null``), allocates a fresh group id
+  (``max(existing) + 1`` within that template's/workout's own
+  exercises), and sets it on both. A workout pairing then calls
+  ``equalize_workout_superset_sets`` to catch the shorter member's set
+  count up immediately, rather than leaving them uneven until the next
+  set is logged.
+- **Breaking a pair** — ``PATCH /api/workouts/:id/exercises/:id
+  {superset_group: null}`` (``unlink``) clears *both* sides, since a pair
+  only exists as two. The same route rejects a non-null value outright
+  (400) — pairing has to set both sides in one transaction, which a
+  single exercise's PATCH can't do; that's what the ``link`` endpoint is
+  for. A template save instead just omits ``superset_group`` from both
+  entries.
+- **Staying valid under reordering** — ``normalize_superset_groups``
+  walks a workout's or template's exercises in position order and
+  dissolves any run that isn't *exactly* a contiguous pair: a lone
+  survivor (its partner moved away, or was removed) is freed, and a run
+  of three or more (shouldn't normally happen, since pairing always
+  breaks a longer run first, but could follow unusual direct API use)
+  keeps the first two and frees the rest. Called after every reorder,
+  link, unlink and exercise removal — a superset's membership is always
+  re-derived from current positions, never left stale.
+- **Forcing equal set counts** — ``sync_template_superset_sets`` (a
+  template save) sets every paired member's ``target_sets`` to the first
+  member's value. ``equalize_workout_superset_sets`` (a workout) pads
+  every paired member's sets up to the longest member's count by
+  appending empty ones — never removes any; shrinking only happens
+  through an explicit, single-exercise ``delete_set``, which fans out to
+  its pair's same-position set itself (so both really do drop together,
+  not just "whichever the request happened to target").
 
 Generating a workout
 ----------------------

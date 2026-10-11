@@ -352,6 +352,13 @@ A saved, reusable shape for a workout ("routine" in Strong's terms).
        and accepted on write, but not read by anything at runtime —
        progression computes the next weight from history instead. A
        candidate for removal.
+   * - superset_group
+     - int, nullable
+     - Set, with an identical value, on exactly one other **adjacent**
+       (by ``position``) exercise to pair the two into a
+       :doc:`superset <features/supersets>`. Not a globally unique id —
+       only scoped to this template's own exercises. See
+       ``services/supersets.py``.
 
 .. _model-workout:
 
@@ -426,6 +433,13 @@ One exercise block within a workout.
      - e.g. ``felt heavy today`` — also used to carry a note when a
        historical entry recorded that the exercise was done but no set
        numbers were captured (see :doc:`data_migration`)
+   * - superset_group
+     - int, nullable
+     - Same meaning as ``TemplateExercise.superset_group`` above, scoped
+       to this workout instead: set identically on exactly one other
+       adjacent exercise to pair the two into a
+       :doc:`superset <features/supersets>`, forcing equal set counts
+       between them. See ``services/supersets.py``.
 
 .. _model-workoutset:
 

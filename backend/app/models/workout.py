@@ -46,6 +46,10 @@ class WorkoutExercise(db.Model):
     exercise_id = db.Column(db.Integer, db.ForeignKey("exercise_templates.id"), nullable=False)
     position = db.Column(db.Integer, nullable=False, default=0)
     notes = db.Column(db.Text, nullable=True)
+    # Exercises sharing a non-null value, contiguous by position, are a superset -- done back to
+    # back as one round, with the same set count forced across every member. Scoped to this
+    # workout only (not a cross-workout id); see services/supersets.py.
+    superset_group = db.Column(db.Integer, nullable=True)
 
     workout = db.relationship("Workout", back_populates="exercises")
     exercise = db.relationship("ExerciseTemplate")

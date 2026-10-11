@@ -44,6 +44,10 @@ class TemplateExercise(db.Model):
     drop_sets = db.Column(db.Integer, nullable=False, default=0)
     target_reps = db.Column(db.String(32), nullable=True)
     target_weight = db.Column(db.Numeric(8, 4), nullable=True)
+    # Exercises sharing a non-null value, contiguous by position, are a superset -- done back to
+    # back as one round, with the same working-set count forced across every member. Scoped to
+    # this template only (not a cross-template id); see services/supersets.py.
+    superset_group = db.Column(db.Integer, nullable=True)
 
     template = db.relationship("WorkoutTemplate", back_populates="exercises")
     exercise = db.relationship("ExerciseTemplate")

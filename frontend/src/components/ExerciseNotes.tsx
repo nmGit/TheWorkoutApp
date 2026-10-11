@@ -1,74 +1,28 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useExerciseTemplate, useUpdateExerciseTemplate } from '../api/exerciseTemplates'
 import { useUpdateWorkoutExercise } from '../api/workouts'
+import type { ExerciseMenuItem } from './ExerciseMenu'
 import type { WorkoutExercise } from '../types'
 
 /** "instance": this workout only. "template": every workout of this exercise. */
 export type NoteKind = 'instance' | 'template'
 
-/** The three-dot menu in an exercise's header, offering both kinds of note. */
-export function ExerciseNotesMenu({ onChoose }: { onChoose: (kind: NoteKind) => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent) {
-        if (e.key === 'Escape') setOpen(false)
-        return
-      }
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', close)
-    return () => {
-      document.removeEventListener('mousedown', close)
-      document.removeEventListener('keydown', close)
-    }
-  }, [open])
-
-  const choose = (kind: NoteKind) => {
-    setOpen(false)
-    onChoose(kind)
-  }
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-border/40 ${
-          open ? 'bg-border/40' : ''
-        }`}
-        title="Exercise notes"
-        aria-label="Exercise notes"
-        aria-expanded={open}
-      >
-        ⋯
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-10 mt-1 flex w-52 flex-col overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg">
-          <button
-            type="button"
-            onClick={() => choose('instance')}
-            className="px-3 py-2 text-left text-sm text-fg hover:bg-border/40"
-            title="A note for this workout only"
-          >
-            Note for this workout
-          </button>
-          <button
-            type="button"
-            onClick={() => choose('template')}
-            className="px-3 py-2 text-left text-sm text-fg hover:bg-border/40"
-            title="A note shown in every workout of this exercise: reminders, form tips"
-          >
-            Note for every workout
-          </button>
-        </div>
-      )}
-    </div>
-  )
+/** The two note-related entries for an exercise card's "..." menu (see ExerciseMenu) -- not a
+ * menu of its own, since the active workout screen's card combines these with other items
+ * (the superset toggle) in one menu rather than showing two separate "..." buttons. */
+export function noteMenuItems(onChoose: (kind: NoteKind) => void): ExerciseMenuItem[] {
+  return [
+    {
+      label: 'Note for this workout',
+      title: 'A note for this workout only',
+      onClick: () => onChoose('instance'),
+    },
+    {
+      label: 'Note for every workout',
+      title: 'A note shown in every workout of this exercise: reminders, form tips',
+      onClick: () => onChoose('template'),
+    },
+  ]
 }
 
 /** The notes under an exercise's header, plus the editor when one is open. Template

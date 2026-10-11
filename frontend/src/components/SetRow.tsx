@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TrackingType, WeightUnit, WorkoutSet } from '../types'
 import { convertWeight } from '../lib/units'
+import { tone, tonePlaceholderClass } from '../lib/progressionTone'
 import { DurationInput } from './DurationInput'
 import { SetTimer } from './SetTimer'
 import { primeBing } from '../lib/bing'
@@ -41,25 +42,6 @@ function plannedWeight(set: WorkoutSet, weightUnit: WeightUnit): string {
   if (set.planned_weight === null) return ''
   const converted = convertWeight(set.planned_weight, set.planned_weight_unit, weightUnit)
   return (Math.round(converted * 100) / 100).toString()
-}
-
-type Tone = 'up' | 'down' | null
-
-/** Up if `planned` is more than `previous`, down if less, otherwise no tone (including when
- * either value is unknown -- a plain copy, same as last time, is never colored). */
-function tone(planned: number | null, previous: number | null): Tone {
-  if (planned === null || previous === null) return null
-  if (planned > previous) return 'up'
-  if (planned < previous) return 'down'
-  return null
-}
-
-/** The ghost text's color: muted green when progressive overload raised this field over last
- * time, muted amber when it lowered it, the ordinary muted grey otherwise. */
-function tonePlaceholderClass(t: Tone): string {
-  if (t === 'up') return 'placeholder:text-success/70'
-  if (t === 'down') return 'placeholder:text-amber-600/70'
-  return 'placeholder:text-muted'
 }
 
 export function SetRow({ set, index, trackingType, weightUnit, previousSet, restGhostSeconds = null, onChange, onToggleComplete, onDelete }: Props) {

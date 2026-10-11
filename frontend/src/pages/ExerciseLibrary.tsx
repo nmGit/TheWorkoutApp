@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useGroupMuscles, useInfiniteExerciseTemplates, useMuscleGroups } from '../api/exerciseTemplates'
+import { useInfiniteExerciseTemplates, useMuscleGroups } from '../api/exerciseTemplates'
+import { MuscleGroupFilters } from '../components/MuscleGroupFilters'
 import { Button, LoadingState, PageTitle } from '../components/ui'
 import type { ExerciseTemplate } from '../types'
 
@@ -13,7 +14,6 @@ export function ExerciseLibraryPage() {
   const muscleGroupId = Number(searchParams.get('group')) || undefined
   const muscle = searchParams.get('muscle') || undefined
   const { data: groups } = useMuscleGroups()
-  const { data: groupMuscles } = useGroupMuscles(muscleGroupId)
   const {
     data,
     isLoading,
@@ -71,41 +71,7 @@ export function ExerciseLibraryPage() {
         placeholder="Search exercises…"
         className="h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm"
       />
-      <div className="flex flex-wrap gap-1.5">
-        <FilterChip active={muscleGroupId === undefined} onClick={() => setFilters(undefined, undefined)} title="Show all muscle groups">
-          All
-        </FilterChip>
-        {groups?.map((g) => (
-          <FilterChip
-            key={g.id}
-            active={muscleGroupId === g.id}
-            onClick={() => setFilters(g.id, undefined)}
-            title={`Filter to ${g.name}`}
-            image={g.image_url}
-          >
-            {g.name}
-          </FilterChip>
-        ))}
-      </div>
-
-      {muscleGroupId !== undefined && groupMuscles && groupMuscles.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          <FilterChip active={muscle === undefined} onClick={() => setFilters(muscleGroupId, undefined)} title="Show every muscle in this group">
-            All
-          </FilterChip>
-          {groupMuscles.map((m) => (
-            <FilterChip
-              key={m.slug}
-              active={muscle === m.slug}
-              onClick={() => setFilters(muscleGroupId, m.slug)}
-              title={`Show exercises that work ${m.name}`}
-              image={m.image_url}
-            >
-              {m.name}
-            </FilterChip>
-          ))}
-        </div>
-      )}
+      <MuscleGroupFilters muscleGroupId={muscleGroupId} muscle={muscle} onChange={setFilters} />
 
       {isLoading && <LoadingState />}
 
@@ -150,39 +116,5 @@ export function ExerciseLibraryPage() {
         </Button>
       )}
     </div>
-  )
-}
-
-function FilterChip({
-  active,
-  onClick,
-  title,
-  image,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  title?: string
-  /** Optional small diagram shown before the label. */
-  image?: string | null
-  children: ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`inline-flex items-center gap-1.5 rounded-full py-1 text-xs font-medium ${
-        image ? 'pl-1 pr-3' : 'px-3'
-      } ${active ? 'bg-accent text-accent-fg' : 'bg-border/50 text-muted'}`}
-    >
-      {image && (
-        <img
-          src={image}
-          alt=""
-          className={`h-5 w-5 shrink-0 rounded-full object-contain ${active ? 'bg-accent-fg/15' : 'bg-surface'}`}
-        />
-      )}
-      {children}
-    </button>
   )
 }

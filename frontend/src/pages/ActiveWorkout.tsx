@@ -6,15 +6,20 @@ import {
   useAddWorkoutExercise,
   useDeleteSet,
   useDeleteWorkout,
+  useLinkWorkoutExercises,
   useRemoveWorkoutExercise,
   useReorderWorkoutExercises,
   useUpdateSet,
   useUpdateWorkout,
+  useUpdateWorkoutExercise,
 } from '../api/workouts'
 import { useExerciseHistory } from '../api/exerciseTemplates'
 import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
+import { ExerciseMenu } from '../components/ExerciseMenu'
 import { ExercisePicker } from '../components/ExercisePicker'
+import { NameEditor } from '../components/NameEditor'
 import { SetRow } from '../components/SetRow'
+import { SupersetBar } from '../components/SupersetBar'
 import { Button, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { useGlobalRestTimer } from '../context/RestTimerContext'
@@ -22,10 +27,11 @@ import { useDragReorder } from '../hooks/useDragReorder'
 import { ExerciseCard } from '../components/ExerciseCard'
 import { ExerciseList } from '../components/ExerciseList'
 import { formatElapsed } from '../lib/format'
+import { isPaired } from '../lib/supersets'
 import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
 import { useUndo } from '../context/UndoContext'
 import { WorkoutMusclesHeader } from '../components/WorkoutMuscles'
-import { ExerciseNotesMenu, ExerciseNotesPanel, type NoteKind } from '../components/ExerciseNotes'
+import { ExerciseNotesPanel, noteMenuItems, type NoteKind } from '../components/ExerciseNotes'
 
 export function ActiveWorkoutPage() {
   const navigate = useNavigate()
@@ -46,6 +52,8 @@ export function ActiveWorkoutPage() {
   const reorderExercises = useReorderWorkoutExercises(workout?.id ?? -1)
   const { data: template } = useTemplate(workout?.template_id ?? undefined)
   const updateTemplate = useUpdateTemplate(workout?.template_id ?? -1)
+  const linkExercises = useLinkWorkoutExercises(workout?.id ?? -1)
+  const updateWorkoutExercise = useUpdateWorkoutExercise(workout?.id ?? -1)
   const timer = useGlobalRestTimer()
 
   const dragReorder = useDragReorder(
@@ -96,6 +104,7 @@ export function ActiveWorkoutPage() {
                 target_sets: te.target_sets,
                 warmup_sets: te.warmup_sets,
                 drop_sets: te.drop_sets,
+                superset_group: te.superset_group,
               }
             })
             await updateTemplate.mutateAsync({ exercises: reordered })
@@ -175,16 +184,35 @@ export function ActiveWorkoutPage() {
       <ExerciseList
         items={workout.exercises}
         dragReorder={dragReorder}
-        renderCard={(we) =>
-          isHidden(`workout-exercise:${we.id}`) ? null : (
-            <ExerciseBlock
-              workout={workout}
-              workoutExercise={we}
-              handleProps={dragReorder.getHandleProps(we.id)}
-              isDragging={dragReorder.isBeingDragged(we.id)}
-            />
+        renderCard={(we, i) => {
+          if (isHidden(`workout-exercise:${we.id}`)) return null
+          const next = workout.exercises[i + 1]
+          const linkedBelow = isPaired(we, next)
+          return (
+            <div className="flex items-stretch gap-2">
+              <SupersetBar linkedAbove={isPaired(workout.exercises[i - 1], we)} linkedBelow={linkedBelow} />
+              <div className="min-w-0 flex-1">
+                <ExerciseBlock
+                  workout={workout}
+                  workoutExercise={we}
+                  handleProps={dragReorder.getHandleProps(we.id)}
+                  isDragging={dragReorder.isBeingDragged(we.id)}
+                  supersetToggle={
+                    next
+                      ? {
+                          linkedBelow,
+                          onToggle: () =>
+                            linkedBelow
+                              ? updateWorkoutExercise.mutate({ workoutExerciseId: we.id, superset_group: null })
+                              : linkExercises.mutate({ firstId: we.id, secondId: next.id }),
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            </div>
           )
-        }
+        }}
       />
 
       <Button
@@ -209,19 +237,6 @@ export function ActiveWorkoutPage() {
   )
 }
 
-function NameEditor({ workout, onSave }: { workout: Workout; onSave: (name: string) => void }) {
-  const [value, setValue] = useState(workout.name)
-  useEffect(() => setValue(workout.name), [workout.name])
-  return (
-    <input
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => value.trim() && value !== workout.name && onSave(value.trim())}
-      className="-ml-1 w-full min-w-0 rounded px-1 text-xl font-bold focus:bg-border/30 focus:outline-none"
-    />
-  )
-}
-
 /** The ghost text for a set's rest field: the rest of the nearest earlier set
  * in this exercise (so changing one set's rest changes the suggestion for
  * every set after it), else what was used for this set position last time,
@@ -243,11 +258,14 @@ function ExerciseBlock({
   workoutExercise,
   handleProps,
   isDragging,
+  supersetToggle,
 }: {
   workout: Workout
   workoutExercise: WorkoutExercise
   handleProps: Record<string, unknown>
   isDragging: boolean
+  /** Omitted for the last exercise in the list -- there's nothing below it to pair with. */
+  supersetToggle?: { linkedBelow: boolean; onToggle: () => void }
 }) {
   const settings = useAppSettings()
   const timer = useGlobalRestTimer()
@@ -300,7 +318,23 @@ function ExerciseBlock({
       actions={
         <>
           <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
-          <ExerciseNotesMenu onChoose={setEditingNote} />
+          <ExerciseMenu
+            label="Exercise actions"
+            items={[
+              ...noteMenuItems(setEditingNote),
+              ...(supersetToggle
+                ? [
+                    {
+                      label: supersetToggle.linkedBelow ? 'Remove from superset' : 'Superset with next',
+                      title: supersetToggle.linkedBelow
+                        ? 'Unlink this exercise and the next one'
+                        : 'Pair this exercise with the next one, forcing the same set count',
+                      onClick: supersetToggle.onToggle,
+                    },
+                  ]
+                : []),
+            ]}
+          />
           <button
             onClick={() =>
               deleteWithUndo({
@@ -327,7 +361,11 @@ function ExerciseBlock({
       footer={
         <button
           onClick={() => addSet.mutate(workoutExercise.id)}
-          title="Add another set, copied from the last one"
+          title={
+            workoutExercise.superset_group !== null
+              ? 'Add another set, copied from the last one -- also adds one to the paired exercise'
+              : 'Add another set, copied from the last one'
+          }
           className="mt-2 w-full rounded-lg border border-dashed border-border py-2 text-sm font-medium text-muted hover:bg-border/20"
         >
           + Add set

@@ -35,6 +35,10 @@ Glossary
       A set performed immediately after the previous one, at reduced
       weight, with no rest in between.
 
+   Superset
+      Two adjacent exercises linked to be done back to back as one round,
+      forced to the same set count. See :doc:`features/supersets`.
+
    Muscle recency
       How long since a muscle was last worked by a completed, counting
       set. A muscle is "in need" once that reaches 8 days. See

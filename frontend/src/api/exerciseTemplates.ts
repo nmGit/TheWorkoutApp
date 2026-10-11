@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Equipment, ExerciseTemplate, MuscleGroup, MuscleOption, TrackingType, WorkoutSet } from '../types'
+import type { Equipment, ExerciseTemplate, MuscleGroup, MuscleOption, PlanPreviewSet, TrackingType, WorkoutSet } from '../types'
 
 const INFINITE_PAGE_SIZE = 60
 
@@ -20,6 +20,7 @@ export const exerciseTemplateKeys = {
   list: (params: ExerciseTemplateListParams) => ['exercise-templates', 'list', params] as const,
   detail: (id: number) => ['exercise-templates', 'detail', id] as const,
   history: (id: number) => ['exercise-templates', 'history', id] as const,
+  planPreview: (id: number, params: PlanPreviewParams) => ['exercise-templates', 'plan-preview', id, params] as const,
   facets: ['exercise-templates', 'facets'] as const,
   muscleGroups: ['muscle-groups'] as const,
   groupMuscles: (groupId: number) => ['muscle-groups', groupId, 'muscles'] as const,
@@ -112,6 +113,29 @@ export function useExerciseHistory(id: number | undefined) {
   return useQuery({
     queryKey: exerciseTemplateKeys.history(id ?? -1),
     queryFn: () => api.get<{ total: number; items: ExerciseHistoryItem[] }>(`/exercise-templates/${id}/history`),
+    enabled: id !== undefined,
+  })
+}
+
+export interface PlanPreviewParams {
+  warmupSets: number
+  targetSets: number
+  dropSets: number
+  targetReps: string | null
+}
+
+/** What starting a workout with this exercise would plan right now -- the same progressive
+ * overload calculation a real workout start uses, run against a hypothetical (possibly not yet
+ * saved) set plan. Powers the template editor's preview. */
+export function useExercisePlanPreview(id: number | undefined, params: PlanPreviewParams) {
+  const search = new URLSearchParams()
+  search.set('warmup_sets', String(params.warmupSets))
+  search.set('target_sets', String(params.targetSets))
+  search.set('drop_sets', String(params.dropSets))
+  if (params.targetReps) search.set('target_reps', params.targetReps)
+  return useQuery({
+    queryKey: exerciseTemplateKeys.planPreview(id ?? -1, params),
+    queryFn: () => api.get<PlanPreviewSet[]>(`/exercise-templates/${id}/plan-preview?${search}`),
     enabled: id !== undefined,
   })
 }

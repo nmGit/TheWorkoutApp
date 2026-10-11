@@ -7,6 +7,7 @@ Features
    workout_logging
    rest_timers
    templates
+   supersets
    progressive_overload
    generated_workouts
    exercise_library
