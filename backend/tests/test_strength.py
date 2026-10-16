@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import math
 
 import pytest
 
 from app.extensions import db
+from app.models.bodyweight import BodyweightEntry
 from app.models.exercise_template import ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 
@@ -15,6 +16,18 @@ def _bench(**overrides):
     defaults = dict(
         name="bench press",
         tracking_type="weight_reps",
+        primary_muscles=["pectoralis_major"],
+        secondary_muscles=["triceps_brachii"],
+        is_custom=False,
+    )
+    defaults.update(overrides)
+    return ExerciseTemplate(**defaults)
+
+
+def _pushup(**overrides):
+    defaults = dict(
+        name="push up",
+        tracking_type="bodyweight_reps",
         primary_muscles=["pectoralis_major"],
         secondary_muscles=["triceps_brachii"],
         is_custom=False,
@@ -194,6 +207,60 @@ def test_series_matches_scoring_each_workout_on_its_own_history(app):
                     assert point["muscles"][slug]["ratio"] is None
                 else:
                     assert point["muscles"][slug]["ratio"] == pytest.approx(status["ratio"])
+
+
+def test_bodyweight_exercise_counts_using_logged_body_weight(client, app):
+    with app.app_context():
+        pushup = _pushup()
+        db.session.add(pushup)
+        db.session.add(BodyweightEntry(recorded_at=date(2026, 1, 1), weight=80, unit="kg"))
+        db.session.flush()
+        # Added weight (the set's own `weight`) stays 0 throughout -- only reps change, so any
+        # movement in the score has to come from body weight actually being counted as load.
+        ids = [
+            _workout(pushup, 0, [(0, 8)]),
+            _workout(pushup, 1, [(0, 8)]),
+            _workout(pushup, 2, [(0, 8)]),
+            _workout(pushup, 3, [(0, 12)]),
+        ]
+        db.session.commit()
+
+    fourth = client.get(f"/api/workouts/{ids[3]}/strength").get_json()
+    assert fourth["muscles"]["pectoralis_major"]["status"] == "scored"
+    # More reps at the same (bodyweight) load raises the estimated 1RM, same as it would for
+    # a weighted lift -- so the ratio should show improvement, not sit at a flat 1.0 as it
+    # would if body weight weren't factored in and 0 added weight meant nothing to score.
+    assert fourth["muscles"]["pectoralis_major"]["ratio"] > 1.0
+
+
+def test_bodyweight_exercise_adds_any_logged_extra_weight_on_top(app):
+    from app.services.strength import workout_muscle_values
+
+    with app.app_context():
+        pushup = _pushup()
+        db.session.add(pushup)
+        db.session.add(BodyweightEntry(recorded_at=date(2026, 1, 1), weight=80, unit="kg"))
+        db.session.flush()
+        # A 10kg weighted vest on top of 80kg body weight.
+        wid = _workout(pushup, 0, [(10, 8)])
+        db.session.commit()
+        values = workout_muscle_values(db.session.get(Workout, wid))
+
+    assert values["pectoralis_major"] == pytest.approx(_e1rm(90, 8) * 2 / 3)
+
+
+def test_bodyweight_exercise_is_unscored_without_any_logged_body_weight(client, app):
+    with app.app_context():
+        pushup = _pushup()
+        db.session.add(pushup)
+        db.session.flush()
+        wid = _workout(pushup, 0, [(0, 8)])
+        db.session.commit()
+
+    body = client.get(f"/api/workouts/{wid}/strength").get_json()
+    # No body weight ever logged -- nothing to estimate a load from, so this exercise
+    # contributes no muscle data at all rather than erroring or scoring a bogus zero.
+    assert "pectoralis_major" not in body["muscles"]
 
 
 def test_strength_history_endpoint_lists_every_completed_workout(client, app):

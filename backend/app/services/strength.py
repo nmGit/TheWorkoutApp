@@ -10,7 +10,8 @@ own history.
 
 Two kinds of measurement are scored, each with its own baseline per muscle so the
 scales never mix:
-- "load": weight x reps, as estimated 1RM in kg (weight_reps exercises);
+- "load": weight x reps, as estimated 1RM in kg (weight_reps exercises, and
+  bodyweight_reps exercises using logged body weight + any added weight as the load);
 - "hold": how long a timed set lasted, in seconds (time exercises, except Mobility).
 Cardio is never scored.
 """
@@ -24,6 +25,7 @@ from sqlalchemy.orm import selectinload
 from app.models.exercise_template import ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise
 from app.serializers import canonical_muscle_slug
+from app.services.dates import local_date
 from app.services.units import convert_weight
 
 EMA_SPAN = 5
@@ -54,17 +56,41 @@ def _estimated_one_rm_kg(weight_kg: float, reps: int) -> float:
     return weight_kg * (1 + reps / 30.0)
 
 
-def _is_working_set(s) -> bool:
-    return (
+def _is_working_set(s, bodyweight: bool = False) -> bool:
+    if not (
         s.completed
         and not s.is_warmup
         and not s.is_dropset
         and s.weight is not None
-        and float(s.weight) > 0
         and s.reps is not None
         and 1 <= s.reps <= MAX_REPS
         and s.weight_unit in ("lbs", "kg")
-    )
+    ):
+        return False
+    # A plain weight_reps set with weight 0 logged nothing real -- but 0 is the ordinary,
+    # expected value for a bodyweight_reps set's *added* weight (most never add any), so it
+    # doesn't disqualify the set there; body weight itself supplies the real load.
+    return bodyweight or float(s.weight) > 0
+
+
+def body_weight_kg_on(when) -> float | None:
+    """The logged body weight (kg) as of a given moment -- the most recent BodyweightEntry on
+    or before that date, or (if the workout predates every entry) the earliest one ever logged,
+    since body weight moves slowly enough day to day that the nearest known value is a
+    reasonable stand-in. None only if body weight has never been logged at all -- then a
+    bodyweight exercise's sets have no load to estimate from and simply aren't scored, the
+    same as before body weight was factored in at all."""
+    from app.models.bodyweight import BodyweightEntry  # local import avoids a circular import
+
+    day = local_date(when)
+    entry = (
+        BodyweightEntry.query.filter(BodyweightEntry.recorded_at <= day)
+        .order_by(BodyweightEntry.recorded_at.desc())
+        .first()
+    ) or BodyweightEntry.query.order_by(BodyweightEntry.recorded_at.asc()).first()
+    if entry is None:
+        return None
+    return convert_weight(float(entry.weight), entry.unit, "kg")
 
 
 def _is_hold_set(s) -> bool:
@@ -92,11 +118,11 @@ def _measurement_kind(exercise: ExerciseTemplate) -> str | None:
     """Which kind of measurement an exercise is scored as, or None if it isn't scored."""
     if exercise.is_stretch:
         return None
-    if exercise.tracking_type == "weight_reps":
+    if exercise.tracking_type in ("weight_reps", "bodyweight_reps"):
         return LOAD
     if exercise.tracking_type == "time":
         return HOLD
-    return None  # cardio, bodyweight reps, and anything else
+    return None  # cardio and anything else
 
 
 def muscle_shares(exercise: ExerciseTemplate) -> dict[str, float]:
@@ -114,6 +140,8 @@ def _track_values(workout: Workout) -> dict[tuple[str, str], float]:
     load, duration for holds) is credited to each muscle in proportion to that muscle's
     share of the exercise. The value is the mean of the TOP_SETS best credited sets."""
     candidates = defaultdict(list)  # (slug, kind) -> [credited metric]
+    body_weight_kg: float | None = None
+    body_weight_checked = False
     for we in workout.exercises:
         ex = we.exercise
         if ex is None:
@@ -121,10 +149,22 @@ def _track_values(workout: Workout) -> dict[tuple[str, str], float]:
         kind = _measurement_kind(ex)
         if kind is None:
             continue
+        is_bodyweight = ex.tracking_type == "bodyweight_reps"
+        if is_bodyweight and not body_weight_checked:
+            # Looked up once per workout, not per set/exercise -- body weight doesn't change
+            # within a session, and most workouts have no bodyweight exercise at all.
+            body_weight_kg = body_weight_kg_on(workout.started_at)
+            body_weight_checked = True
         shares = muscle_shares(ex)
         for s in we.sets:
-            if kind == LOAD and _is_working_set(s):
-                weight_kg = convert_weight(float(s.weight), s.weight_unit, "kg")
+            if kind == LOAD and _is_working_set(s, bodyweight=is_bodyweight):
+                added_kg = convert_weight(float(s.weight), s.weight_unit, "kg")
+                if is_bodyweight:
+                    if body_weight_kg is None:
+                        continue  # never logged a body weight -- no load to credit this with
+                    weight_kg = body_weight_kg + added_kg
+                else:
+                    weight_kg = added_kg
                 metric = _estimated_one_rm_kg(weight_kg, s.reps)
             elif kind == HOLD and _is_hold_set(s):
                 metric = float(s.duration_seconds)
@@ -141,7 +181,8 @@ def _track_values(workout: Workout) -> dict[tuple[str, str], float]:
 
 
 def workout_muscle_values(workout: Workout) -> dict[str, float]:
-    """The load value per muscle (kg), for workouts with weight_reps exercises."""
+    """The load value per muscle (kg), for workouts with weight_reps or bodyweight_reps
+    exercises."""
     return {slug: v for (slug, kind), v in _track_values(workout).items() if kind == LOAD}
 
 

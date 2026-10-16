@@ -99,6 +99,16 @@ Workouts
    ``planned_*`` fields, then clears all of them, including
    ``planned_is_progressed`` (see :doc:`../data_flow`).
 
+   ``weight`` is nullable (plenty of sets legitimately have none — a
+   ``time``/``cardio`` exercise, or one not yet filled in), but if given at
+   all it must be a plain, finite number: a string, boolean, ``NaN`` or
+   infinity is rejected with ``400`` before it ever reaches the database.
+   Separately, completing a ``weight_reps`` set (the one tracking type
+   where a null weight makes no sense) with nothing to resolve it from —
+   not entered, and no ``planned_weight`` to fall back on — is also
+   rejected with ``400``, rather than silently saving ``completed: true``
+   with a null weight. ``POST .../sets`` applies the same checks.
+
 ``DELETE /api/sets/:id``
    Remove a single set. If it belongs to a :doc:`superset <../features/supersets>`
    member, also removes its pair's set at the same ``position``, if one

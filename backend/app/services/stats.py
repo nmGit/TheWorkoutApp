@@ -124,7 +124,10 @@ def _aggregate_metric(sets: list[WorkoutSet], metric: str, weight_unit: str, dis
 def default_metric_for(exercise) -> str:
     if exercise.tracking_type == "cardio":
         return "distance"
-    if exercise.tracking_type in ("weight_reps",):
+    if exercise.tracking_type in ("weight_reps", "bodyweight_reps"):
+        # bodyweight_reps' estimated 1RM factors in logged body weight (see
+        # WorkoutSet.estimated_one_rm), so it's meaningful even when no weight is ever added --
+        # unlike "volume" (added weight x reps), which is always zero for an unweighted set.
         return "est_1rm"
     return "volume"
 

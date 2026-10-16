@@ -632,8 +632,13 @@ Business rules
 ---------------
 
 - **Estimated 1RM** uses the Epley formula: ``weight * (1 + reps / 30.0)``,
-  computed only from non-warmup ``weight_reps`` sets with ``reps >= 1``.
-  Single-rep sets return the raw weight (no extrapolation needed).
+  computed only from non-warmup sets with ``reps >= 1``. Single-rep sets
+  return the raw weight (no extrapolation needed). For a
+  ``bodyweight_reps`` set, ``weight`` here means body weight (the nearest
+  logged ``BodyweightEntry`` on or before the set's workout) plus the
+  set's own ``weight`` field (any added load, normally 0) — not the added
+  load alone, since that's not the exercise's real load. ``None`` if body
+  weight has never been logged at all (``WorkoutSet.estimated_one_rm``).
 - **Personal records** are computed on read (not stored) per exercise:
   heaviest weight ever, best estimated 1RM, best single-set volume
   (weight × reps), and — for ``cardio`` exercises — longest distance and

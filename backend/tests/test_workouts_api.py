@@ -523,3 +523,39 @@ def test_completing_a_planned_set_makes_its_planned_values_real(client, bench_pr
     assert (done["weight"], done["weight_unit"], done["reps"], done["completed"]) == (140, "lbs", 9, True)
     assert done["planned_weight"] is None and done["planned_reps"] is None
     assert done["planned_is_progressed"] is False
+
+
+def test_set_weight_rejects_non_numeric_values(client, bench_press):
+    workout = client.post("/api/workouts", json={}).get_json()
+    we_id = client.post(
+        f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": bench_press.id}
+    ).get_json()["exercises"][0]["id"]
+
+    for bad in ("135", True, float("nan"), float("inf"), [135]):
+        resp = client.post(f"/api/workout-exercises/{we_id}/sets", json={"weight": bad})
+        assert resp.status_code == 400, bad
+
+    set_id = client.post(f"/api/workout-exercises/{we_id}/sets", json={"weight": 135, "reps": 5}).get_json()["id"]
+    for bad in ("135", True, float("nan"), float("inf"), [135]):
+        resp = client.patch(f"/api/sets/{set_id}", json={"weight": bad})
+        assert resp.status_code == 400, bad
+    # The bad values above were all rejected before saving -- the valid one still stands.
+    workout = client.get(f"/api/workouts/{workout['id']}").get_json()
+    assert workout["exercises"][0]["sets"][0]["weight"] == 135
+
+
+def test_completing_a_weight_reps_set_requires_a_resolvable_weight(client, bench_press):
+    workout = client.post("/api/workouts", json={}).get_json()
+    we_id = client.post(
+        f"/api/workouts/{workout['id']}/exercises", json={"exercise_id": bench_press.id}
+    ).get_json()["exercises"][0]["id"]
+    set_id = client.post(f"/api/workout-exercises/{we_id}/sets", json={"reps": 5}).get_json()["id"]
+
+    # No weight entered, and nothing planned to fall back on (brand new exercise, no history) --
+    # completing would otherwise leave this weight_reps set's weight null forever.
+    resp = client.patch(f"/api/sets/{set_id}", json={"completed": True})
+    assert resp.status_code == 400
+
+    resp = client.patch(f"/api/sets/{set_id}", json={"weight": 135, "completed": True})
+    assert resp.status_code == 200
+    assert resp.get_json()["weight"] == 135

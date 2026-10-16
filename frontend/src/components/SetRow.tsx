@@ -24,10 +24,18 @@ interface Props {
   trackingType: TrackingType
   weightUnit: WeightUnit
   previousSet?: WorkoutSet
+  /** The previous session's top working set -- see lib/progressionTone.ts. Used instead of
+   * previousSet for tone comparisons on a progressed set, since every working set in a
+   * progressed run shares the same planned value and must compare against the same "last
+   * time," not whichever previous set happens to share its position. */
+  progressionBaseline?: WorkoutSet
   /** What the rest field shows as ghost text while this set has no rest of its own. */
   restGhostSeconds?: number | null
   onChange: (patch: Partial<WorkoutSet>) => void
-  onToggleComplete: () => void
+  /** `pending` carries any typed-but-not-yet-blurred field (see uncommittedPatch below) --
+   * the caller merges it into the same request that marks the set complete, rather than
+   * relying on blur to commit it first in a separate, potentially racing request. */
+  onToggleComplete: (pending?: Partial<WorkoutSet>) => void
   onDelete: () => void
 }
 
@@ -44,7 +52,7 @@ function plannedWeight(set: WorkoutSet, weightUnit: WeightUnit): string {
   return (Math.round(converted * 100) / 100).toString()
 }
 
-export function SetRow({ set, index, trackingType, weightUnit, previousSet, restGhostSeconds = null, onChange, onToggleComplete, onDelete }: Props) {
+export function SetRow({ set, index, trackingType, weightUnit, previousSet, progressionBaseline, restGhostSeconds = null, onChange, onToggleComplete, onDelete }: Props) {
   const [weight, setWeight] = useState(() => displayWeight(set, weightUnit))
   const [reps, setReps] = useState(set.reps?.toString() ?? '')
   const [duration, setDuration] = useState(set.duration_seconds?.toString() ?? '')
@@ -52,14 +60,17 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
   const plannedWeightText = plannedWeight(set, weightUnit) || (previousSet && displayWeight(previousSet, weightUnit)) || '-'
   const plannedRepsText = set.planned_reps?.toString() ?? (previousSet?.reps != null ? previousSet.reps.toString() : 'reps')
   // Ghost text is tinted when progressive overload actually moved this field from last time's
-  // value for this same set -- a plain copy (no progression, or a warm-up/drop) has nothing to
-  // compare differently, so it stays neutral.
+  // value -- a plain copy (no progression, or a warm-up/drop) has nothing to compare
+  // differently, so it stays neutral. A progressed set compares against progressionBaseline
+  // (the same reference for every working set this session), everything else against
+  // previousSet (this same position, last time).
+  const toneReference = set.planned_is_progressed ? progressionBaseline : previousSet
   const previousWeightNum =
-    previousSet?.weight != null ? Math.round(convertWeight(previousSet.weight, previousSet.weight_unit, weightUnit) * 100) / 100 : null
+    toneReference?.weight != null ? Math.round(convertWeight(toneReference.weight, toneReference.weight_unit, weightUnit) * 100) / 100 : null
   const plannedWeightNum =
     set.planned_weight !== null ? Math.round(convertWeight(set.planned_weight, set.planned_weight_unit, weightUnit) * 100) / 100 : null
   const weightTone = tone(plannedWeightNum, previousWeightNum)
-  const repsTone = tone(set.planned_reps, previousSet?.reps ?? null)
+  const repsTone = tone(set.planned_reps, toneReference?.reps ?? null)
   const plannedDurationText =
     set.planned_duration_seconds?.toString() ?? (previousSet?.duration_seconds != null ? previousSet.duration_seconds.toString() : 'sec')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -92,23 +103,51 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
   // mounted across re-renders (keyed by set.id), so plain useState alone
   // would only ever reflect the value at first mount.
   useEffect(() => setWeight(displayWeight(set, weightUnit)), [set.weight, set.weight_unit, weightUnit])
+  // Same resync for reps/duration -- without it, completing a set with those fields left blank
+  // (so the real value comes from its planned/previous fallback, not from typing) would leave
+  // the input's local state empty even once the server fills the real value in. The field would
+  // then look blank again, with its ghost text now wrong too (planned_* is cleared on completion,
+  // so the placeholder falls back to the *previous session's* value at this same position, which
+  // can easily differ from what was just saved).
+  useEffect(() => setReps(set.reps?.toString() ?? ''), [set.reps])
+  useEffect(() => setDuration(set.duration_seconds?.toString() ?? ''), [set.duration_seconds])
 
-  const commitWeight = () => {
+  // What each field would send if committed right now, or {} if it still matches the set --
+  // used both by onBlur (committed on its own) and by the complete button (merged into one
+  // request alongside completed: true, see uncommittedPatch below).
+  const pendingWeightPatch = (): Partial<WorkoutSet> => {
     const parsed = weight === '' ? null : Number(weight)
-    const currentDisplayed = displayWeight(set, weightUnit)
-    if (weight === currentDisplayed) return
+    if (weight === displayWeight(set, weightUnit)) return {}
     // Whatever the lifter types is in the unit they're currently viewing --
     // that becomes this set's unit of record if it differs from before.
-    onChange({ weight: parsed, weight_unit: parsed !== null ? weightUnit : null })
+    return { weight: parsed, weight_unit: parsed !== null ? weightUnit : null }
   }
-  const commitReps = () => {
+  const pendingRepsPatch = (): Partial<WorkoutSet> => {
     const parsed = reps === '' ? null : Math.round(Number(reps))
-    if (parsed !== set.reps) onChange({ reps: parsed })
+    return parsed !== set.reps ? { reps: parsed } : {}
   }
-  const commitDuration = () => {
+  const pendingDurationPatch = (): Partial<WorkoutSet> => {
     const parsed = duration === '' ? null : Math.round(Number(duration))
-    if (parsed !== set.duration_seconds) onChange({ duration_seconds: parsed })
+    return parsed !== set.duration_seconds ? { duration_seconds: parsed } : {}
   }
+  // Every field with typed-but-not-yet-blurred text, as one patch. Completing a set while
+  // still focused in a field (never having blurred it) used to lose that text: blur's own
+  // commit and the complete button's click fire as two separate, concurrently in-flight
+  // requests, and whichever one the server/network happened to settle last would win --
+  // usually the complete request, since it carries no weight/reps at all and so looked like
+  // "leave it as it was." Folding the same pending values into the complete request itself
+  // means there's only one source of truth for what this click saves, not a race between two.
+  const uncommittedPatch = (): Partial<WorkoutSet> => ({
+    ...pendingWeightPatch(),
+    ...pendingRepsPatch(),
+    ...pendingDurationPatch(),
+  })
+  const commitIfChanged = (patch: Partial<WorkoutSet>) => {
+    if (Object.keys(patch).length) onChange(patch)
+  }
+  const commitWeight = () => commitIfChanged(pendingWeightPatch())
+  const commitReps = () => commitIfChanged(pendingRepsPatch())
+  const commitDuration = () => commitIfChanged(pendingDurationPatch())
 
   const showWeight = trackingType === 'weight_reps' || trackingType === 'bodyweight_reps'
   const showReps = trackingType === 'weight_reps' || trackingType === 'bodyweight_reps'
@@ -214,7 +253,7 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, rest
         )}
         <button
           type="button"
-          onClick={onToggleComplete}
+          onClick={() => onToggleComplete(uncommittedPatch())}
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 ${
             set.completed ? 'border-success bg-success text-white' : 'border-border text-muted'
           }`}

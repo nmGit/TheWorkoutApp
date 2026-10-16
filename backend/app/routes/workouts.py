@@ -1,5 +1,7 @@
+import math
 import re
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy.orm import selectinload
@@ -27,6 +29,36 @@ bp = Blueprint("workouts", __name__, url_prefix="/api")
 
 def _utcnow():
     return datetime.now(timezone.utc)
+
+
+def _validated_weight(value, field="weight"):
+    """A set's weight is nullable (unentered, or a tracking type that doesn't use it), but if a
+    value is given at all it must be a plain, finite number -- never a string, bool, NaN or
+    infinity reaching the database. Accepts a Decimal too (what a previous set's own weight
+    reads back as), and returns it unchanged rather than normalizing its type."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        raise ApiError(f"{field} must be a number", 400)
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, InvalidOperation):
+        raise ApiError(f"{field} must be a number", 400)
+    if not math.isfinite(numeric):
+        raise ApiError(f"{field} must be a finite number", 400)
+    return value
+
+
+def _require_weight_if_completing(s, we=None):
+    """weight_reps is the one tracking type where a completed set with no weight makes no
+    sense -- block it here rather than let a completed set quietly save a null weight."""
+    if not s.completed:
+        return
+    we = we or s.workout_exercise
+    if we is None or we.exercise is None or we.exercise.tracking_type != "weight_reps":
+        return
+    if s.weight is None:
+        raise ApiError("Enter a weight before completing this set", 400)
 
 
 @bp.get("/workouts")
@@ -374,7 +406,7 @@ def add_set(workout_exercise_id):
     new_set = WorkoutSet(
         workout_exercise_id=we.id,
         position=len(we.sets),
-        weight=body.get("weight", previous.weight if previous else None),
+        weight=_validated_weight(body.get("weight", previous.weight if previous else None)),
         weight_unit=body.get(
             "weight_unit", previous.weight_unit if previous else UserSettings.get().weight_unit
         ),
@@ -396,6 +428,9 @@ def add_set(workout_exercise_id):
         planned_duration_seconds=planned["duration_seconds"] if planned else None,
         planned_is_progressed=planned["is_progressed"] if planned else False,
     )
+    if new_set.completed and new_set.weight is None and new_set.planned_weight is not None:
+        new_set.weight, new_set.weight_unit = new_set.planned_weight, new_set.planned_weight_unit
+    _require_weight_if_completing(new_set, we)
     db.session.add(new_set)
     db.session.flush()
     if we.superset_group is not None:
@@ -431,7 +466,7 @@ def update_set(set_id):
         "completed",
     ):
         if field in body:
-            setattr(s, field, body[field])
+            setattr(s, field, _validated_weight(body[field]) if field == "weight" else body[field])
 
     if s.completed and not was_completed:
         # Completing a set makes its planned values real, for any field left empty.
@@ -444,6 +479,7 @@ def update_set(set_id):
         s.planned_weight = s.planned_weight_unit = s.planned_reps = s.planned_duration_seconds = None
         s.planned_is_progressed = False
 
+    _require_weight_if_completing(s)
     db.session.commit()
     return jsonify(serialize_set(s))
 

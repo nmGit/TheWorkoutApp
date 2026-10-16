@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useExerciseHistory, useExercisePlanPreview } from '../api/exerciseTemplates'
 import { useAppSettings } from '../context/SettingsContext'
 import { formatDuration, formatWeight } from '../lib/format'
-import { tone, toneTextClass } from '../lib/progressionTone'
+import { progressionBaseline, tone, toneTextClass } from '../lib/progressionTone'
 import { convertWeight } from '../lib/units'
 import type { PlanPreviewSet, TemplateExercise, WeightUnit } from '../types'
 import type { WorkoutSet } from '../types'
@@ -113,12 +113,17 @@ export function PlanSets({
       <div className="space-y-0.5">
         {planned.map((row, i) => {
           const previewEntry: PlanPreviewSet | undefined = preview?.[i]
-          const previousEntry = previousFor(row.kind, row.index)
+          const progressed = previewEntry?.is_progressed ?? false
+          // Every working set gets the same progressed value, so they must all compare against
+          // the same "last time" (the previous top working set) -- not whichever previous set
+          // happens to share this row's position, which would color otherwise-identical rows
+          // inconsistently. Non-progressed rows (warm-ups, drops, or progression that didn't
+          // change anything) still compare position-for-position, same as a plain copy.
+          const previousEntry = row.kind === 'working' && progressed ? progressionBaseline(byKind.working) : previousFor(row.kind, row.index)
           const prev = normalize(previousEntry, settings.weight_unit)
           // Show the live preview once it's in; a plain copy of last time (no color, no badge)
           // until then, so the row never flashes empty while the preview loads.
           const next = previewEntry ? normalize(previewEntry, settings.weight_unit) : prev
-          const progressed = previewEntry?.is_progressed ?? false
           const repsTone = tone(next.reps, prev.reps)
           const weightTone = tone(next.weight, prev.weight)
 

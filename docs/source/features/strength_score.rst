@@ -18,6 +18,9 @@ The sections after it describe the previous method, kept for comparison.
   in the window; otherwise the exercise has no baseline yet.
 - **Each exercise's session value** is the mean of its best three counting sets
   from that session only (estimated one-rep max for lifts, duration for holds).
+  A ``bodyweight_reps`` exercise (push-ups, pull-ups...) is scored the same way as
+  a weighted lift, using your nearest logged body weight plus any added weight as
+  the load — see :ref:`features/strength_score:Per-set input`.
 - **Likely entry errors are set aside.** A session more than 60% away from its
   baseline (or, with no baseline, more than 60% above the exercise's best so far) is
   not scored and doesn't feed later baselines. This catches entries such as a 753 lb
@@ -53,7 +56,9 @@ A set counts toward strength only if all of these hold:
 
 - it is **completed**;
 - it is **not a warm-up** and **not a drop set**;
-- it has a weight above zero, in ``lbs`` or ``kg`` (converted to kg);
+- it has a weight above zero, in ``lbs`` or ``kg`` (converted to kg) — except a
+  ``bodyweight_reps`` set's own ``weight``, which is just the *added* load on top of
+  body weight (see below) and is normally 0;
 - it has between **1 and 10 reps**.
 
 Each counting set has an estimated one-rep max, using the Epley formula
@@ -63,13 +68,20 @@ itself for a single.
 Two kinds of measurement are scored, each with its own baseline per muscle so the
 scales never mix:
 
-- **load** (``weight_reps`` exercises): the estimated one-rep max above, in kg.
+- **load** (``weight_reps`` *and* ``bodyweight_reps`` exercises): the estimated
+  one-rep max above, in kg. For a ``bodyweight_reps`` exercise (push-ups, pull-ups,
+  dips...), the load isn't the set's own ``weight`` alone — it's the nearest logged
+  body weight (``BodyweightEntry`` on or before the workout's date, falling back to
+  the earliest one ever logged if the workout predates all of them) plus that added
+  weight, since a push-up's real load is your body weight, not the usually-zero
+  amount added on top of it. A ``bodyweight_reps`` exercise contributes nothing at
+  all if body weight has never been logged even once — there's no load to estimate
+  from — rather than scoring it as zero.
 - **hold** (``time`` exercises): how long a set lasted, in seconds. A plank is scored
   this way. Stretches in the Mobility group are timed but aren't strength work, so
   they're left out.
 
-Cardio is never scored. Bodyweight-reps exercises aren't scored yet either, because
-their logged weight is zero and there's no load to estimate from.
+Cardio is never scored.
 
 For a hold set, the metric is ``duration_seconds`` (with the same completed, not
 warm-up, not drop-set rules). The top-3 selection and muscle weights below apply to

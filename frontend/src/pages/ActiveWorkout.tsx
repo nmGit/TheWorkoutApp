@@ -27,6 +27,7 @@ import { useDragReorder } from '../hooks/useDragReorder'
 import { ExerciseCard } from '../components/ExerciseCard'
 import { ExerciseList } from '../components/ExerciseList'
 import { formatElapsed } from '../lib/format'
+import { progressionBaseline } from '../lib/progressionTone'
 import { isPaired } from '../lib/supersets'
 import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
 import { useUndo } from '../context/UndoContext'
@@ -278,15 +279,16 @@ function ExerciseBlock({
   const { data: history } = useExerciseHistory(workoutExercise.exercise_id)
 
   const previousSets: WorkoutSet[] = history?.items.find((item) => item.workout_id !== workout.id)?.sets ?? []
+  const previousBaseline = progressionBaseline(previousSets)
   const trackingType = workoutExercise.tracking_type ?? 'weight_reps'
 
   const restGhost = (index: number) =>
     restGhostSeconds(workoutExercise.sets, index, previousSets, settings.default_rest_seconds)
 
-  const handleToggleComplete = (set: WorkoutSet, index: number) => {
+  const handleToggleComplete = (set: WorkoutSet, index: number, pending?: Partial<WorkoutSet>) => {
     const nextCompleted = !set.completed
     if (!nextCompleted) {
-      updateSet.mutate({ setId: set.id, data: { completed: false } })
+      updateSet.mutate({ setId: set.id, data: { ...pending, completed: false } })
       return
     }
     // The rest is the set's own value if it has one, else its ghost value.
@@ -295,7 +297,10 @@ function ExerciseBlock({
     const restSeconds = set.rest_seconds ?? restGhost(index)
     updateSet.mutate({
       setId: set.id,
-      data: set.rest_seconds === null ? { completed: true, rest_seconds: restSeconds } : { completed: true },
+      // `pending` is whatever was still typed but not yet blurred in the weight/reps/duration
+      // fields -- folded into this same request so completing doesn't race a separate commit
+      // for it (see SetRow's uncommittedPatch).
+      data: { ...pending, ...(set.rest_seconds === null ? { rest_seconds: restSeconds } : {}), completed: true },
     })
     timer.start(restSeconds, set.id)
   }
@@ -382,9 +387,10 @@ function ExerciseBlock({
               trackingType={trackingType}
               weightUnit={settings.weight_unit}
               previousSet={previousSets[i]}
+              progressionBaseline={previousBaseline}
               restGhostSeconds={restGhost(i)}
               onChange={(patch) => handleChange(set, i, patch)}
-              onToggleComplete={() => handleToggleComplete(set, i)}
+              onToggleComplete={(pending) => handleToggleComplete(set, i, pending)}
               onDelete={() =>
                 deleteWithUndo({
                   message: 'Set deleted',

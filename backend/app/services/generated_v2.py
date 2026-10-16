@@ -27,6 +27,7 @@ from app.services.strength import (
     _estimated_one_rm_kg,
     _is_hold_set,
     _planned_muscles,
+    body_weight_kg_on,
     history_before,
     muscle_shares,
 )
@@ -50,17 +51,21 @@ def rep_weight(reps: int) -> float:
     return max(0.5, 1 - 0.5 * (reps - FULL_WEIGHT_REPS) / (MAX_REPS - FULL_WEIGHT_REPS))
 
 
-def _is_load_set(s) -> bool:
-    return (
+def _is_load_set(s, *, bodyweight: bool = False) -> bool:
+    if not (
         s.completed
         and not s.is_warmup
         and not s.is_dropset
         and s.weight is not None
-        and float(s.weight) > 0
         and s.reps is not None
         and 1 <= s.reps <= MAX_REPS
         and s.weight_unit in ("lbs", "kg")
-    )
+    ):
+        return False
+    # weight 0 on a plain weight_reps set logged nothing real, but it's the ordinary value
+    # for a bodyweight_reps set's *added* weight (most never add any) -- body weight itself
+    # is the real load there, so 0 doesn't disqualify the set.
+    return bodyweight or float(s.weight) > 0
 
 
 def generated_rir(reps: int, weight_kg: float, reference_e1rm: float) -> float:
@@ -83,19 +88,30 @@ class ExerciseSession:
 
 def _exercise_sessions(workout: Workout, references: dict[int, float]) -> list[ExerciseSession]:
     out = []
+    body_weight_kg: float | None = None
+    body_weight_checked = False
     for we in workout.exercises:
         ex = we.exercise
         if ex is None:
             continue
         shares = muscle_shares(ex)
-        if ex.tracking_type == "weight_reps":
+        if ex.tracking_type in ("weight_reps", "bodyweight_reps"):
+            is_bodyweight = ex.tracking_type == "bodyweight_reps"
+            if is_bodyweight and not body_weight_checked:
+                # Once per workout, not per exercise -- body weight doesn't change within a
+                # session, and most workouts have no bodyweight exercise at all.
+                body_weight_kg = body_weight_kg_on(workout.started_at)
+                body_weight_checked = True
+            if is_bodyweight and body_weight_kg is None:
+                continue  # never logged a body weight -- nothing to credit this session with
             ref = references.get(ex.id)
             scored = []
             hard = 0
             for s in we.sets:
-                if not _is_load_set(s):
+                if not _is_load_set(s, bodyweight=is_bodyweight):
                     continue
-                w = convert_weight(float(s.weight), s.weight_unit, "kg")
+                added_kg = convert_weight(float(s.weight), s.weight_unit, "kg")
+                w = body_weight_kg + added_kg if is_bodyweight else added_kg
                 e = _estimated_one_rm_kg(w, s.reps)
                 scored.append((e, rep_weight(s.reps)))
                 if ref is not None and generated_rir(s.reps, w, ref) <= 3:

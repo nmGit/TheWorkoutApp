@@ -138,7 +138,9 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
               trackingType={workoutExercise.tracking_type ?? 'weight_reps'}
               weightUnit={settings.weight_unit}
               onChange={(patch) => updateSet.mutate({ setId: set.id, data: patch })}
-              onToggleComplete={() => updateSet.mutate({ setId: set.id, data: { completed: !set.completed } })}
+              onToggleComplete={(pending) =>
+                updateSet.mutate({ setId: set.id, data: { ...pending, completed: !set.completed } })
+              }
               onDelete={() =>
                 deleteWithUndo({
                   message: 'Set deleted',

@@ -97,9 +97,29 @@ class WorkoutSet(db.Model):
     workout_exercise = db.relationship("WorkoutExercise", back_populates="sets")
 
     def estimated_one_rm(self):
+        """Estimated one-rep max (Epley), in this set's own weight_unit.
+
+        For a bodyweight_reps exercise, the set's own `weight` is only the *added* load (a
+        weighted vest, normally 0) -- the real load is body weight too, so it's added on top
+        (nearest logged BodyweightEntry on or before this set's workout; see
+        services/strength.body_weight_kg_on). None if body weight has never been logged at
+        all, same as any other missing input here.
+        """
         if self.weight is None or self.reps is None or self.reps < 1 or self.is_warmup:
             return None
         weight = float(self.weight)
+        exercise = self.workout_exercise.exercise if self.workout_exercise else None
+        if exercise is not None and exercise.tracking_type == "bodyweight_reps":
+            # Local imports: services/strength.py imports this module's Workout/WorkoutExercise
+            # at module load, so importing it back at module scope here would be circular.
+            from app.services.strength import body_weight_kg_on
+            from app.services.units import convert_weight
+
+            body_kg = body_weight_kg_on(self.workout_exercise.workout.started_at)
+            if body_kg is None:
+                return None
+            added_kg = convert_weight(weight, self.weight_unit, "kg")
+            weight = convert_weight(body_kg + added_kg, "kg", self.weight_unit)
         if self.reps == 1:
             return weight
         return weight * (1 + self.reps / 30.0)
