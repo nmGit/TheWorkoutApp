@@ -61,10 +61,12 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, prog
   const plannedRepsText = set.planned_reps?.toString() ?? (previousSet?.reps != null ? previousSet.reps.toString() : 'reps')
   // Ghost text is tinted when progressive overload actually moved this field from last time's
   // value -- a plain copy (no progression, or a warm-up/drop) has nothing to compare
-  // differently, so it stays neutral. A progressed set compares against progressionBaseline
-  // (the same reference for every working set this session), everything else against
-  // previousSet (this same position, last time).
-  const toneReference = set.planned_is_progressed ? progressionBaseline : previousSet
+  // differently, so it stays neutral. Whenever progression is active (whether or not it
+  // actually changed anything -- see planned_progression_active), every working set this
+  // session shares the same planned value, so all of them compare against the same
+  // progressionBaseline reference; everything else compares against previousSet (this same
+  // position, last time).
+  const toneReference = set.planned_progression_active ? progressionBaseline : previousSet
   const previousWeightNum =
     toneReference?.weight != null ? Math.round(convertWeight(toneReference.weight, toneReference.weight_unit, weightUnit) * 100) / 100 : null
   const plannedWeightNum =
@@ -175,13 +177,22 @@ export function SetRow({ set, index, trackingType, weightUnit, previousSet, prog
         <span className="text-sm font-medium text-muted">{index + 1}</span>
         {set.is_warmup && <span className="text-[9px] font-semibold uppercase text-amber-500">W</span>}
         {set.is_dropset && <span className="text-[9px] font-semibold uppercase text-accent">D</span>}
-        {set.planned_is_progressed && (
+        {set.planned_is_progressed ? (
           <span
             className="text-[9px] font-semibold uppercase text-success"
-            title="This set's ghost values come from progressive overload"
+            title="This set's ghost values come from progressive overload actually raising them"
           >
             P
           </span>
+        ) : (
+          set.planned_progression_active && (
+            <span
+              className="text-[9px] font-semibold uppercase text-muted"
+              title="Progressive overload is active for this exercise, but didn't change anything for this set"
+            >
+              P
+            </span>
+          )
         )}
       </div>
 

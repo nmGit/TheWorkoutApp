@@ -97,8 +97,14 @@ export interface WorkoutSet {
   planned_weight_unit: WeightUnit | null
   planned_reps: number | null
   planned_duration_seconds: number | null
-  /** True when the planned values above came from progressive overload, not a plain copy. */
+  /** True when the planned values above are actually different from what progressive overload
+   * compared them against (a real increase), not just progression having run. */
   planned_is_progressed: boolean
+  /** True whenever progressive overload actually ran for this set, whether or not it changed
+   * anything -- implied by planned_is_progressed, but can be true while that's false (ran, but
+   * landed on the same value as last time). A plain copy (warm-up/drop, no history, or
+   * progression off) is always false here. */
+  planned_progression_active: boolean
   is_warmup: boolean
   is_dropset: boolean
   rpe: number | null
@@ -116,6 +122,7 @@ export interface PlanPreviewSet {
   reps: number | null
   duration_seconds: number | null
   is_progressed: boolean
+  is_progression_active: boolean
 }
 
 export interface WorkoutExercise {

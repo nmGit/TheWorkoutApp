@@ -72,8 +72,20 @@ def _last_sets_by_kind(exercise_id: int) -> dict[str, list]:
 
 
 def progress_working(working: list, rep_range: tuple[int, int], settings: UserSettings):
-    """The next working set's (weight, unit, reps) from last session's working sets, or None if there is
-    nothing to progress from (no weights logged) or progression is off."""
+    """The next working set's (weight, unit, reps, changed) from last session's working sets,
+    or None if there is nothing to progress from (no weights logged) or progression is off.
+
+    `changed` is False when the computed target is identical to the best set already
+    demonstrated last session (the "anchor": the first of last session's top-weight sets) --
+    double progression in particular can compute a target that's just catching a weaker set
+    up to what the best set already did (e.g. last time was 30x8, 30x8, 30x7 -- the next
+    target is 30x8, already true for two of the three sets), which is progress toward
+    consistency but isn't actually asking for more than has already been done. Callers use
+    `changed` to decide whether to mark a set "progressed" (ghost-text color, the "P" badge)
+    rather than marking every set progression merely *ran* for, whether or not it moved
+    anything -- the same single reference point (the first top set) the frontend's ghost-text
+    coloring (progressionBaseline) compares against, so the two always agree.
+    """
     if settings.progression_method == "off":
         return None
     logged = [s for s in working if s.weight is not None and s.reps is not None and float(s.weight) > 0]
@@ -93,15 +105,21 @@ def progress_working(working: list, rep_range: tuple[int, int], settings: UserSe
     # Reached the top of the range on every top set: time to add load.
     reached = all(s.reps >= high for s in top)
     fewest = min(s.reps for s in top)
+    anchor = top[0]
+    anchor_weight = round(convert_weight(float(anchor.weight), anchor.weight_unit, unit), 2)
 
     if settings.progression_method == "linear":
-        weight = top_weight + step if reached else top_weight
-        return round(weight, 2), unit, high
+        weight = round(top_weight + step, 2) if reached else round(top_weight, 2)
+        reps = high
+    elif reached:
+        weight, reps = round(top_weight + step, 2), low
+    else:
+        # Double progression: first add reps within the range, then add load and start again
+        # at the bottom.
+        weight, reps = round(top_weight, 2), min(high, max(low, fewest + 1))
 
-    # Double progression: first add reps within the range, then add load and start again at the bottom.
-    if reached:
-        return round(top_weight + step, 2), unit, low
-    return round(top_weight, 2), unit, min(high, max(low, fewest + 1))
+    changed = weight != anchor_weight or reps != anchor.reps
+    return weight, unit, reps, changed
 
 
 def plan_sets(template_exercise) -> list[dict]:
@@ -122,7 +140,7 @@ def plan_sets(template_exercise) -> list[dict]:
         copies = previous[kind]
         for i in range(count):
             if kind == "working" and progressed is not None:
-                weight, unit, reps = progressed
+                weight, unit, reps, changed = progressed
                 planned.append({
                     "is_warmup": False,
                     "is_dropset": False,
@@ -130,7 +148,8 @@ def plan_sets(template_exercise) -> list[dict]:
                     "weight_unit": unit,
                     "reps": reps,
                     "duration_seconds": None,
-                    "is_progressed": True,
+                    "is_progressed": changed,
+                    "is_progression_active": True,
                 })
                 continue
             if i < len(copies):
@@ -147,6 +166,7 @@ def plan_sets(template_exercise) -> list[dict]:
                 "reps": source.reps if source else None,
                 "duration_seconds": source.duration_seconds if source else None,
                 "is_progressed": False,
+                "is_progression_active": False,
             })
     return planned
 
@@ -166,6 +186,7 @@ def make_planned_sets(workout_exercise_id: int, planned: list[dict]) -> list[Wor
             planned_reps=p["reps"],
             planned_duration_seconds=p["duration_seconds"],
             planned_is_progressed=p["is_progressed"],
+            planned_progression_active=p["is_progression_active"],
         )
         for position, p in enumerate(planned)
     ]

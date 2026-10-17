@@ -84,10 +84,19 @@ class WorkoutSet(db.Model):
     planned_weight_unit = db.Column(db.String(3), nullable=True)
     planned_reps = db.Column(db.Integer, nullable=True)
     planned_duration_seconds = db.Column(db.Integer, nullable=True)
-    # True when the planned values above came from progressive overload actually computing a next
-    # weight/reps, rather than a plain copy of last session (warm-ups/drops, or no history/progression
-    # off). Cleared along with the planned_* fields when the set is completed.
+    # True when the planned values above are actually different from what progressive overload
+    # is comparing them against (the "anchor": last session's best set) -- a real increase, not
+    # just progression having run. Cleared along with the planned_* fields when the set is
+    # completed.
     planned_is_progressed = db.Column(db.Boolean, nullable=False, default=False)
+    # True whenever progressive overload actually ran for this set (there was a previous
+    # session to progress from, and progression isn't off in Settings), whether or not it
+    # changed anything -- a plain copy (warm-ups/drops, or no history/progression off) is
+    # always False here. planned_is_progressed implies this; this doesn't imply
+    # planned_is_progressed (progression can run and still land on the same value as last
+    # time -- see services/sets_plan.progress_working). Cleared along with the planned_* fields
+    # when the set is completed, same as planned_is_progressed.
+    planned_progression_active = db.Column(db.Boolean, nullable=False, default=False)
 
     is_warmup = db.Column(db.Boolean, nullable=False, default=False)
     is_dropset = db.Column(db.Boolean, nullable=False, default=False)

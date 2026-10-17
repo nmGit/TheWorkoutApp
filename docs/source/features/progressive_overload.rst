@@ -106,7 +106,15 @@ not just a copy:
   jump to 3×8 @ 140 turns "140" green and "8" amber, since the rep count
   dropped back to the bottom of the range.
 - **A small "P"** appears under the set number (alongside the warm-up
-  "W"/drop "D" badges — a set is never both) whenever that set's ghost
-  values came from progression rather than a plain copy. It disappears
+  "W"/drop "D" badges — a set is never both), in one of two colors:
+  green when progression actually raised a value over what that same set
+  was last time, grey when progression ran (there's history to compare
+  against, and it isn't off in Settings) but the computed target happens
+  to match what was already done — double progression in particular can
+  do this when it's catching a weaker set up to the session's best one
+  rather than asking for more than was already shown (3×8, 3×8, 3×7 last
+  time plans 3×8 next, which is only new for that third set). No badge at
+  all means a plain copy — no progression to speak of for this set
+  (warm-ups, drops, progression off, or no history yet). It disappears
   once the set is completed, the same moment its planned values are
   cleared, since by then it's no longer a suggestion.

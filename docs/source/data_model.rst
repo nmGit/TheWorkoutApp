@@ -515,12 +515,24 @@ One exercise block within a workout.
        client-side instead.
    * - planned_is_progressed
      - bool, default false
-     - ``True`` only when the ``planned_*`` values above came from
-       progressive overload actually computing a next weight/reps, not a
-       plain copy (warm-ups, drops, progression off, or no earlier
-       session to progress from). Cleared alongside the ``planned_*``
-       fields when the set is completed. Drives the ghost text's color
-       and the small "P" badge — see :doc:`features/progressive_overload`.
+     - ``True`` only when the ``planned_*`` values above are actually
+       different from what progressive overload compared them against —
+       a real increase, not just progression having run (double
+       progression in particular can compute a target that matches what
+       was already demonstrated, e.g. catching a weaker set up to the
+       session's best one). Cleared alongside the ``planned_*`` fields
+       when the set is completed. Drives the ghost text's color and the
+       green "P" badge — see :doc:`features/progressive_overload`.
+   * - planned_progression_active
+     - bool, default false
+     - ``True`` whenever progressive overload actually ran for this set
+       (there's an earlier session to progress from, and it isn't off in
+       Settings), whether or not it changed anything —
+       ``planned_is_progressed`` implies this, but not the reverse.
+       Always ``False`` for a plain copy (warm-ups, drops, progression
+       off, or no earlier session). Cleared alongside the ``planned_*``
+       fields when the set is completed. Drives the grey "P" badge when
+       ``planned_is_progressed`` is ``False`` but this is ``True``.
    * - rpe
      - decimal, nullable
      - Optional rate-of-perceived-exertion, 1-10 in 0.5 increments

@@ -114,12 +114,15 @@ export function PlanSets({
         {planned.map((row, i) => {
           const previewEntry: PlanPreviewSet | undefined = preview?.[i]
           const progressed = previewEntry?.is_progressed ?? false
-          // Every working set gets the same progressed value, so they must all compare against
-          // the same "last time" (the previous top working set) -- not whichever previous set
-          // happens to share this row's position, which would color otherwise-identical rows
-          // inconsistently. Non-progressed rows (warm-ups, drops, or progression that didn't
-          // change anything) still compare position-for-position, same as a plain copy.
-          const previousEntry = row.kind === 'working' && progressed ? progressionBaseline(byKind.working) : previousFor(row.kind, row.index)
+          const progressionActive = previewEntry?.is_progression_active ?? false
+          // Whenever progression is active (whether or not it actually changed anything -- see
+          // is_progression_active), every working set gets the same value, so they must all
+          // compare against the same "last time" (the previous top working set) -- not
+          // whichever previous set happens to share this row's position, which would color
+          // otherwise-identical rows inconsistently. Everything else (warm-ups, drops, or no
+          // progression at all) still compares position-for-position, same as a plain copy.
+          const previousEntry =
+            row.kind === 'working' && progressionActive ? progressionBaseline(byKind.working) : previousFor(row.kind, row.index)
           const prev = normalize(previousEntry, settings.weight_unit)
           // Show the live preview once it's in; a plain copy of last time (no color, no badge)
           // until then, so the row never flashes empty while the preview loads.
@@ -155,11 +158,19 @@ export function PlanSets({
                       ? 'text-accent'
                       : progressed
                         ? 'text-success'
-                        : 'text-transparent'
+                        : progressionActive
+                          ? 'text-muted'
+                          : 'text-transparent'
                 }`}
-                title={progressed ? "This set's preview comes from progressive overload" : undefined}
+                title={
+                  progressed
+                    ? "This set's preview comes from progressive overload actually raising it"
+                    : progressionActive
+                      ? 'Progressive overload is active for this exercise, but didn’t change anything for this set'
+                      : undefined
+                }
               >
-                {row.kind === 'warmup' ? 'W' : row.kind === 'drop' ? 'D' : progressed ? 'P' : '·'}
+                {row.kind === 'warmup' ? 'W' : row.kind === 'drop' ? 'D' : progressed || progressionActive ? 'P' : '·'}
               </span>
               {/* Ghost text, like an empty input's placeholder: what this set will be filled with,
                   not a set value entered yet. */}

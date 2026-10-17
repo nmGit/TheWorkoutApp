@@ -32,23 +32,29 @@ Starting a workout from a template
       falls back to ``(8, 12)``).
    d. ``progress_working(working_sets, rep_range, settings)`` — see
       :ref:`data_flow:Progressive overload calculation` below — returns
-      either a single ``(weight, unit, reps)`` to apply to every working
-      set, or ``None`` (progression off, or no earlier logged weight to
-      work from).
+      either a single ``(weight, unit, reps, changed)`` to apply to every
+      working set, or ``None`` (progression off, or no earlier logged
+      weight to work from).
    e. Build one dict per planned set, in warm-up → working → drop order:
       a warm-up/drop set copies the same-kind set at the same position
       from last session (or the last one of that kind, if there were
       fewer last time; or nothing, if there's no history at all) and is
-      marked ``is_progressed: False``; a working set uses the
-      ``progress_working`` result and is marked ``is_progressed: True``
-      if there is one, else it also just copies last time's (also
-      ``False`` — a copy is never "progressed", even for a working set).
+      marked ``is_progressed: False``, ``is_progression_active: False``;
+      a working set uses the ``progress_working`` result when there is
+      one — ``is_progression_active: True`` always, ``is_progressed``
+      set to its ``changed`` flag (``True`` only if the computed
+      weight/reps actually differ from the anchor set — see below, since
+      double progression in particular can compute a target that matches
+      what was already done) — else it also just copies last time's
+      (both flags ``False`` — a copy was never progression running at
+      all, let alone one that changed something).
 4. ``sets_plan.py:make_planned_sets`` turns each dict into an unsaved
    ``WorkoutSet`` with ``completed: false`` and its values written to
    ``planned_weight``/``planned_weight_unit``/``planned_reps``/
-   ``planned_duration_seconds``/``planned_is_progressed`` — **not** to
+   ``planned_duration_seconds``/``planned_is_progressed``/
+   ``planned_progression_active`` — **not** to
    ``weight``/``reps``/``duration_seconds``. Those stay null until the set
-   is actually completed, at which point ``planned_is_progressed`` is
+   is actually completed, at which point both planned-progression flags are
    reset to ``False`` along with the rest (see "Completing a set" below).
    This same pairing (build a spec, call ``plan_sets``, then
    ``make_planned_sets``) is also what generated workouts use (step 10
@@ -75,6 +81,17 @@ Progressive overload calculation
    to the range).
 7. Convert the result back to the user's display unit and round to 2
    decimals.
+8. ``changed`` = the result's (weight, reps) differs from the **anchor**
+   set's — the first of "the top sets" from step 3, the same single
+   reference point the frontend's ghost-text coloring
+   (``lib/progressionTone.ts:progressionBaseline``) compares against.
+   Double progression especially can land exactly on the anchor's own
+   values (catching a weaker set up to what the best one already did,
+   e.g. last time 135×8, 135×8, 135×7 plans 135×8 next — identical to two
+   of those three sets) without ``changed`` being ``True``; this is what
+   separates a green "P" (``is_progressed``) from a grey one
+   (``is_progression_active`` only) on the active workout screen and the
+   template editor's preview.
 
 Previewing it before starting a workout
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -103,7 +120,7 @@ Completing a set
    ``weight``+``weight_unit``, ``reps``, ``duration_seconds`` still null
    after step 1, copy it from the matching ``planned_*`` column. Then
    null out all four ``planned_*`` columns and reset
-   ``planned_is_progressed`` to ``False``.
+   ``planned_is_progressed``/``planned_progression_active`` to ``False``.
 3. Commit.
 
 This is why a set can be completed with the checkmark alone, with nothing

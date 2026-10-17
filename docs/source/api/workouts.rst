@@ -97,7 +97,8 @@ Workouts
    beyond saving the given fields: newly completing a set copies any of
    ``weight``/``reps``/``duration_seconds`` still null from that set's
    ``planned_*`` fields, then clears all of them, including
-   ``planned_is_progressed`` (see :doc:`../data_flow`).
+   ``planned_is_progressed``/``planned_progression_active`` (see
+   :doc:`../data_flow`).
 
    ``weight`` is nullable (plenty of sets legitimately have none — a
    ``time``/``cardio`` exercise, or one not yet filled in), but if given at

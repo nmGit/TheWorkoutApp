@@ -363,6 +363,7 @@ def test_double_progression_adds_load_once_the_top_of_the_range_is_reached(clien
     sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
     assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(140, 6), (140, 6)]
     assert all(s["planned_is_progressed"] for s in sets)
+    assert all(s["planned_progression_active"] for s in sets)
 
 
 def test_plan_preview_matches_what_starting_a_workout_would_plan(client, bench_press):
@@ -376,6 +377,7 @@ def test_plan_preview_matches_what_starting_a_workout_would_plan(client, bench_p
         (140, 6, True),
         (140, 6, True),
     ]
+    assert all(s["is_progression_active"] for s in preview)
 
     # The same plan, started for real, matches the preview exactly.
     tid = _template_with(client, bench_press.id, target_reps="6-8")
@@ -389,7 +391,9 @@ def test_plan_preview_matches_what_starting_a_workout_would_plan(client, bench_p
 def test_plan_preview_defaults_and_404(client, bench_press):
     # No query params: defaults to 1 working set, the Settings default rep range.
     preview = client.get(f"/api/exercise-templates/{bench_press.id}/plan-preview").get_json()
-    assert len(preview) == 1 and preview[0]["is_progressed"] is False  # no history yet, nothing to progress
+    # No history yet, nothing to progress -- not active either, not just "didn't change anything".
+    assert len(preview) == 1 and preview[0]["is_progressed"] is False
+    assert preview[0]["is_progression_active"] is False
 
     assert client.get("/api/exercise-templates/999999/plan-preview").status_code == 404
 
@@ -408,6 +412,7 @@ def test_adding_an_exercise_mid_workout_still_gets_progressive_overload(client, 
     assert first_set["weight"] is None and first_set["reps"] is None  # still a ghost, not real
     assert first_set["planned_weight"] == 135 and first_set["planned_reps"] == 9
     assert first_set["planned_is_progressed"] is True
+    assert first_set["planned_progression_active"] is True
 
     # A second set added before the first is ever filled in carries the same suggestion forward
     # (not left bare just because there's nothing *real* in the first set yet to copy).
@@ -415,6 +420,7 @@ def test_adding_an_exercise_mid_workout_still_gets_progressive_overload(client, 
     assert second_set["weight"] is None and second_set["reps"] is None
     assert second_set["planned_weight"] == 135 and second_set["planned_reps"] == 9
     assert second_set["planned_is_progressed"] is True
+    assert second_set["planned_progression_active"] is True
 
     # Once the most recent set is actually filled in and completed, a third set copies its real
     # values instead -- ordinary fast repeat-set entry, no planned suggestion needed anymore.
@@ -422,6 +428,7 @@ def test_adding_an_exercise_mid_workout_still_gets_progressive_overload(client, 
     third_set = client.post(f"/api/workout-exercises/{we['id']}/sets", json={}).get_json()
     assert third_set["weight"] == 140 and third_set["reps"] == 6
     assert third_set["planned_weight"] is None and third_set["planned_is_progressed"] is False
+    assert third_set["planned_progression_active"] is False
 
 
 def test_progression_off_and_warmups_are_not_marked_progressed(client, bench_press):
@@ -440,7 +447,9 @@ def test_progression_off_and_warmups_are_not_marked_progressed(client, bench_pre
     sets = started["exercises"][0]["sets"]
     warmup, working = sets[0], sets[1]
     assert warmup["is_warmup"] and warmup["planned_is_progressed"] is False
+    assert warmup["planned_progression_active"] is False
     assert working["planned_is_progressed"] is True
+    assert working["planned_progression_active"] is True
     client.delete(f"/api/workouts/{started['id']}")
 
     client.patch("/api/settings", json={"progression_method": "off"})
@@ -448,6 +457,8 @@ def test_progression_off_and_warmups_are_not_marked_progressed(client, bench_pre
         "/api/workouts", json={"template_id": _template_with(client, bench_press.id, target_reps="6-8")}
     ).get_json()["exercises"][0]["sets"]
     assert all(s["planned_is_progressed"] is False for s in sets_off)
+    # Progression being off isn't "active but unchanged" -- it never ran at all.
+    assert all(s["planned_progression_active"] is False for s in sets_off)
 
 
 def test_double_progression_repeats_the_load_and_adds_a_rep_below_the_top(client, bench_press):
@@ -455,6 +466,21 @@ def test_double_progression_repeats_the_load_and_adds_a_rep_below_the_top(client
     tid = _template_with(client, bench_press.id, target_reps="6-8")
     sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
     assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(135, 7), (135, 7)]
+
+
+def test_a_weaker_set_catching_up_to_the_top_set_is_not_marked_progressed(client, bench_press):
+    """User-reported (live screenshot): last session 135x8, 135x8, 135x7 -- double progression's
+    target for the next session is 135x8 (catch the weak third set up to the top two), which is
+    identical to what the top set already did. That's not actually asking for more than was
+    already demonstrated, so it shouldn't show the green "P" badge/color, unlike a real
+    increase -- but progression *did* run (there's a previous session, and it's not off), so it
+    should still show the grey "active, but nothing changed" badge rather than none at all."""
+    _finished_session(client, bench_press.id, [(135, 8), (135, 8), (135, 7)])
+    tid = _template_with(client, bench_press.id, target_reps="6-8", target_sets=3)
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(135, 8), (135, 8), (135, 8)]
+    assert all(s["planned_is_progressed"] is False for s in sets)
+    assert all(s["planned_progression_active"] for s in sets)
 
 
 def test_warm_ups_do_not_count_toward_progression(client, bench_press):
@@ -523,6 +549,7 @@ def test_completing_a_planned_set_makes_its_planned_values_real(client, bench_pr
     assert (done["weight"], done["weight_unit"], done["reps"], done["completed"]) == (140, "lbs", 9, True)
     assert done["planned_weight"] is None and done["planned_reps"] is None
     assert done["planned_is_progressed"] is False
+    assert done["planned_progression_active"] is False
 
 
 def test_set_weight_rejects_non_numeric_values(client, bench_press):

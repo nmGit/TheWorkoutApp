@@ -396,6 +396,7 @@ def add_set(workout_exercise_id):
             "reps": previous.planned_reps,
             "duration_seconds": previous.planned_duration_seconds,
             "is_progressed": previous.planned_is_progressed,
+            "is_progression_active": previous.planned_progression_active,
         }
     else:
         # The exercise's first set this session (e.g. just added mid-workout, not started from
@@ -427,6 +428,7 @@ def add_set(workout_exercise_id):
         planned_reps=planned["reps"] if planned else None,
         planned_duration_seconds=planned["duration_seconds"] if planned else None,
         planned_is_progressed=planned["is_progressed"] if planned else False,
+        planned_progression_active=planned["is_progression_active"] if planned else False,
     )
     if new_set.completed and new_set.weight is None and new_set.planned_weight is not None:
         new_set.weight, new_set.weight_unit = new_set.planned_weight, new_set.planned_weight_unit
@@ -478,6 +480,7 @@ def update_set(set_id):
             s.duration_seconds = s.planned_duration_seconds
         s.planned_weight = s.planned_weight_unit = s.planned_reps = s.planned_duration_seconds = None
         s.planned_is_progressed = False
+        s.planned_progression_active = False
 
     _require_weight_if_completing(s)
     db.session.commit()
