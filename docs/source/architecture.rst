@@ -147,6 +147,10 @@ one non-JSON, non-SPA route — static HTML (see "Documentation" below).
        lights up. Not stored in the database.
    * - ``stats.py``
      - PRs, progress series, the dashboard, body-weight series.
+   * - ``search.py``
+     - Fuzzy name search (word-order independent, single-typo tolerant),
+       used by ``GET /api/exercise-templates?q=``. See
+       :doc:`features/exercise_library`.
    * - ``units.py`` / ``dates.py``
      - Weight/distance conversion; local-date handling for history grouping.
 

@@ -18,6 +18,7 @@ from app.serializers import (
 )
 from app.services.dates import local_date
 from app.services.exercise_templates import GROUP_MUSCLES
+from app.services.search import fuzzy_rank
 from app.services.sets_plan import SetPlanSpec, plan_sets
 from app.validation import ApiError
 
@@ -126,8 +127,6 @@ def _last_performed(template: ExerciseTemplate):
 def list_exercise_templates():
     query = ExerciseTemplate.query
     q = request.args.get("q")
-    if q:
-        query = query.filter(ExerciseTemplate.name.ilike(f"%{q}%"))
     body_part = request.args.get("body_part")
     if body_part:
         query = query.filter(ExerciseTemplate.body_part == body_part)
@@ -149,10 +148,21 @@ def list_exercise_templates():
     if is_custom is not None:
         query = query.filter(ExerciseTemplate.is_custom == (is_custom.lower() == "true"))
 
-    total = query.count()
     limit = min(request.args.get("limit", default=40, type=int), MAX_LIMIT)
     offset = request.args.get("offset", default=0, type=int)
-    items = query.order_by(ExerciseTemplate.name).offset(offset).limit(limit).all()
+
+    if q:
+        # Ranked in Python, not by the database: word-order-independent, typo-tolerant
+        # matching (see services/search.py) isn't expressible as a single SQL filter, and the
+        # candidate set -- every exercise matching the *other* filters above, at most a couple
+        # thousand rows for this app -- is small enough to rank in memory on every request
+        # rather than needing a real search index.
+        ranked = fuzzy_rank(query.all(), q)
+        total = len(ranked)
+        items = ranked[offset : offset + limit]
+    else:
+        total = query.count()
+        items = query.order_by(ExerciseTemplate.name).offset(offset).limit(limit).all()
 
     return jsonify(
         {
@@ -380,6 +390,7 @@ def exercise_template_plan_preview(exercise_id):
                 "reps": p["reps"],
                 "duration_seconds": p["duration_seconds"],
                 "is_progressed": p["is_progressed"],
+                "is_progression_active": p["is_progression_active"],
             }
             for p in plan_sets(spec)
         ]

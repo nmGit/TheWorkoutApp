@@ -43,6 +43,20 @@ def test_list_exercise_templates_search_and_pagination(client, app):
     assert body["items"][0]["instruction_steps"] == ["Lie flat on your back...", "Curl up."]
 
 
+def test_list_exercise_templates_search_is_fuzzy(client, app):
+    with app.app_context():
+        _make_template(external_id="0001", name="Bench Press (Barbell)")
+        _make_template(external_id="0002", name="Treadmill Run")
+
+    # Word order independent -- a plain substring match rejects this.
+    body = client.get("/api/exercise-templates?q=press bench").get_json()
+    assert [i["name"] for i in body["items"]] == ["Bench Press (Barbell)"]
+
+    # Tolerates a typo.
+    body = client.get("/api/exercise-templates?q=bemch press").get_json()
+    assert [i["name"] for i in body["items"]] == ["Bench Press (Barbell)"]
+
+
 def test_list_exercise_templates_filters_by_muscle_group_id(client, app, chest_group):
     with app.app_context():
         _make_template(external_id="0001", name="barbell bench press", muscle_group_id=chest_group.id)

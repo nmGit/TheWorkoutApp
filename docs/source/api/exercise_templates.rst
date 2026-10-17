@@ -27,7 +27,9 @@ separate rows, and why that was a bug).
    exercise library's muscle-filter ordering.
 
 ``GET /api/exercise-templates``
-   List/search. Query params: ``q`` (name search), ``muscle_group_id``
+   List/search. Query params: ``q`` (name search — fuzzy: word order doesn't matter and a
+   single typo is tolerated, ranked best match first; see ``services/search.py`` and
+   :doc:`../features/exercise_library`), ``muscle_group_id``
    (this app's own ``MuscleGroup``, filters the real column directly —
    ``404`` if unknown), ``muscle`` (a canonical slug — exercises that work
    it, primary or secondary, via the ``ExerciseMuscle`` link table),
@@ -105,8 +107,10 @@ separate rows, and why that was a bug).
    ``WorkoutSet``'s ``planned_*`` fields, minus the id/position wrapper
    since nothing is actually created: ``is_warmup``, ``is_dropset``,
    ``weight``, ``weight_unit``, ``reps``, ``duration_seconds``,
-   ``is_progressed``. ``404`` if the exercise doesn't exist. Powers the
-   template editor's live preview (:doc:`../features/templates`).
+   ``is_progressed``, ``is_progression_active`` (see
+   :ref:`model-workoutset`'s ``planned_progression_active``). ``404`` if
+   the exercise doesn't exist. Powers the template editor's live preview
+   (:doc:`../features/templates`).
 
 ``GET /api/exercises/:id/stats``
    See :doc:`stats`. Kept at the old ``/api/exercises`` path rather than

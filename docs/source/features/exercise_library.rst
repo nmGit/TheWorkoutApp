@@ -73,7 +73,13 @@ Browsing
 
 ``/exercises`` shows the **full template catalog** (all 1,324+ dataset
 templates plus any custom ones), not just exercises the user has already
-logged — searchable by name and filterable by muscle group. Tapping any
+logged — searchable by name and filterable by muscle group. The search is
+fuzzy, not a strict substring match: word order doesn't matter ("press
+bench" finds "Bench Press"), and a single typo in a word is tolerated
+("suqat" still finds "Squat") — see :doc:`../api/exercise_templates`. Both
+the exercise library and the "add exercise" picker (template editor and
+active workout) search this same way, since they call the same endpoint.
+Tapping any
 row goes straight to its :ref:`features/exercise_library:Exercise detail`
 page — history, chart, and PRs if it's been logged before, or an empty
 detail page (image + instructions, no history yet) if it's never been
