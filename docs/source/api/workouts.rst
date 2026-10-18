@@ -51,8 +51,13 @@ Workouts
    Discards a workout (active or completed) entirely.
 
 ``POST /api/workouts/:id/exercises``
-   Add an exercise block. Body: ``{exercise_id}``. Appended at the next
-   ``position``.
+   Add an exercise block. Body: exactly one of ``{exercise_id}`` (catalog)
+   or ``{custom_exercise_id}`` (this user's own) — a bare id alone can't
+   say which, since the two live in separate databases with independent
+   id sequences (see :doc:`../data_model`'s "Database split" and
+   ``services/exercise_refs.py:resolve_exercise_reference``); ``400`` if
+   neither or both are given, ``404`` if the one given doesn't exist.
+   Appended at the next ``position``.
 
 ``PATCH /api/workouts/:id/exercises/reorder``
    Reorder the workout's exercise blocks. Body: ``{exercise_ids}``, the

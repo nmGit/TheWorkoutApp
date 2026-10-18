@@ -8,8 +8,11 @@ Templates
 
 ``POST /api/templates``
    Create a template. Body: ``name`` (required), ``notes``, ``exercises``
-   (array of ``{exercise_id, target_sets, warmup_sets, drop_sets,
-   target_reps, target_weight, superset_group}``, in order). ``target_reps``
+   (array of ``{exercise_id|custom_exercise_id, target_sets, warmup_sets,
+   drop_sets, target_reps, target_weight, superset_group}``, in order —
+   exactly one of ``exercise_id``/``custom_exercise_id`` per entry, same
+   as adding a workout exercise; see :doc:`workouts` and
+   :doc:`../data_model`'s "Database split"). ``target_reps``
    is this exercise's progressive-overload rep-range override (e.g.
    ``"8-12"``), not a literal per-set target — see
    :doc:`../features/progressive_overload`. ``superset_group``, set

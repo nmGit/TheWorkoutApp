@@ -235,8 +235,15 @@ Backend configuration is environment-variable driven (12-factor style):
      - Purpose
    * - ``DATABASE_URL``
      - ``sqlite:///../data/workout.db``
-     - SQLAlchemy connection string. Point at Postgres in production by
-       setting e.g. ``postgresql+psycopg://user:pass@host/db``.
+     - This user's own data (the default SQLAlchemy bind). Point at
+       Postgres in production by setting e.g.
+       ``postgresql+psycopg://user:pass@host/db``.
+   * - ``CATALOG_DATABASE_URL``
+     - ``sqlite:///../data/catalog.db``
+     - The shared exercise catalog (the ``"catalog"`` bind) — a separate
+       database from the one above; see :doc:`data_model`'s "Database
+       split". Common to every user, never written to by a user action;
+       rebuilt by ``scripts/seed_exercise_templates.py``, not Alembic.
    * - ``FLASK_ENV`` / ``FLASK_DEBUG``
      - unset (production)
      - Standard Flask debug toggle for local dev only.

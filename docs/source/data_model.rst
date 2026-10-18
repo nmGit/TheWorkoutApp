@@ -6,8 +6,77 @@ cross-exercise analytical queries — "every logged weight for Bench Press,
 in order" — are plain joins, not application-level scans of nested
 documents.
 
+Database split
+----------------
+
+There are **two** SQLite databases, not one, each with its own
+``SQLALCHEMY_BINDS`` entry (``"catalog"``) and its own connection string
+(``DATABASE_URL`` for the user one — the default bind — and
+``CATALOG_DATABASE_URL`` for the catalog):
+
+- **The catalog** (``ExerciseTemplate``, ``Muscle``, ``ExerciseMuscle``,
+  ``MuscleGroup``): the shared, vendored exercise reference data — common
+  to every user, never written to by a user action. Rebuilt from the
+  bundled dataset submodules by ``scripts/seed_exercise_templates.py``
+  rather than hand-migrated with Alembic (that script, not a migration,
+  is this database's schema/data source of truth).
+- **The user database** (everything else — ``Workout``,
+  ``WorkoutExercise``, ``WorkoutSet``, ``WorkoutTemplate``,
+  ``TemplateExercise``, ``CustomExerciseTemplate``,
+  ``CatalogExerciseNote``, ``UserSettings``, ``BodyweightEntry``): this
+  user's own data. This is the database a future multi-user deployment
+  multiplies — each user gets their own copy of it, all reading the one
+  shared catalog — this split is the first step toward that, not the
+  whole of it (there's still only ever one user database and no login/
+  account system yet).
+
+This matters for how exercises are referenced. A workout/template
+exercise "slot" (``WorkoutExercise``, ``TemplateExercise``) can point at
+either a catalog exercise or this user's own custom one, and the two live
+in different database *files* — SQLite can't enforce a foreign key across
+them, and each table has its own independent id sequence, so a catalog
+exercise and a custom one can share the same id. Both tables therefore
+carry **two** nullable columns, ``exercise_id`` (catalog, unenforced) and
+``custom_exercise_id`` (same database, a real enforced foreign key), with
+a ``CHECK`` constraint that exactly one is ever set
+(``ExerciseReferenceMixin``, ``models/exercise_reference.py``). Application
+code reads whichever is set through a single ``.exercise`` property
+(resolves to an ``ExerciseTemplate`` or a ``CustomExerciseTemplate``,
+whichever one `is None` — see the model for how) rather than branching on
+the two columns everywhere, and anything that needs to group/compare "the
+same exercise" across rows (progression history, strength-score
+baselines, ...) uses ``.exercise_ref`` — an ``(exercise | custom, id)``
+pair — as its key instead of a bare id, since a bare id is exactly the
+thing that can collide.
+
+A **note** on a catalog exercise (the free-text "stay at 60 until my form
+is good" kind) can't be a column on the catalog row either, once that row
+is common to every user — it's personal commentary, not a correction to
+the shared exercise, so it lives in this user's own database instead
+(``CatalogExerciseNote``, a one-row-per-noted-exercise table keyed by the
+catalog exercise's id, also unenforced for the same cross-file reason).
+``ExerciseTemplate.notes`` is a Python property backed by that table, not
+a real column, so code that reads ``exercise.notes`` doesn't need to know
+the difference.
+
+A ``CustomExerciseTemplate`` doesn't use the ``Muscle``/``ExerciseMuscle``
+link tables at all (those are catalog-only) — its muscles are plain
+canonical-slug strings in two JSON columns, since a slug is already a
+stable, self-describing identifier that doesn't need a row of its own
+the way the catalog's muscle-name reconciliation
+(``services/muscle_catalog.py``) does.
+
+See ``scripts/split_catalog_database.py`` for the one-time script that
+performed this split on an existing combined database (and the
+``l0d3a8f5c2e9``/``m1e4b9a6d3f0`` migrations either side of it), and
+:doc:`review` for the change itself.
+
 Entity-relationship overview
 -----------------------------
+
+The catalog and user databases are drawn together here for readability,
+but — per the above — they're two separate files; nothing below crosses
+them with an actual foreign key.
 
 .. mermaid::
 
@@ -15,10 +84,13 @@ Entity-relationship overview
        MuscleGroup ||--o{ ExerciseTemplate : has
        ExerciseTemplate ||--o{ ExerciseMuscle : has
        Muscle ||--o{ ExerciseMuscle : "worked by"
-       ExerciseTemplate ||--o{ TemplateExercise : "used by"
+       ExerciseTemplate ||--o{ TemplateExercise : "used by (catalog)"
+       CustomExerciseTemplate ||--o{ TemplateExercise : "used by (custom)"
+       ExerciseTemplate ||--o{ CatalogExerciseNote : "noted by"
        WorkoutTemplate ||--o{ TemplateExercise : has
        WorkoutTemplate ||--o{ Workout : "started from (optional)"
-       ExerciseTemplate ||--o{ WorkoutExercise : "used by"
+       ExerciseTemplate ||--o{ WorkoutExercise : "used by (catalog)"
+       CustomExerciseTemplate ||--o{ WorkoutExercise : "used by (custom)"
        Workout ||--o{ WorkoutExercise : has
        WorkoutExercise ||--o{ WorkoutSet : has
 
@@ -45,21 +117,27 @@ codebase, and they don't share rows:
   Mobility and Full Body intentionally have no training group, since
   generated workouts don't rank them.
 
-``ExerciseTemplate`` is the sole "what is this exercise" concept — name,
-muscle group, equipment, tracking type, description/instructions/notes.
-There is no separate per-user "Exercise" entity: a saved routine's slot
-(``TemplateExercise``) and a workout's logged block (``WorkoutExercise``)
-both link straight to it. This used to be two tables (a personal
-``Exercise`` linked via a nullable ``template_id`` to a dataset/custom
-``ExerciseTemplate``); they were merged after that nullable link let two
-different exercises collide onto one template (see :doc:`review` for the
-incident and :doc:`data_migration` for the merge itself). Dataset-sourced
-templates (``is_custom: false``) additionally carry image/instructions
-metadata from the bundled dataset submodules (RepDB and/or the original
-exercises-dataset); custom ones
-(``is_custom: true``) don't — that's the only real difference between the
-two, everything else about them (filtering, editing, logging, stats) is
-symmetric.
+``ExerciseTemplate`` (catalog, dataset-sourced only now) and
+``CustomExerciseTemplate`` (user data, this user's own) are "what is this
+exercise", between them: name, muscle group, equipment, tracking type,
+description. A saved routine's slot (``TemplateExercise``) and a
+workout's logged block (``WorkoutExercise``) link to whichever one an
+exercise actually is (see "Database split" above). There is no separate
+per-user "Exercise" entity beyond that: this used to be two tables (a
+personal ``Exercise`` linked via a nullable ``template_id`` to a dataset/
+custom ``ExerciseTemplate``); they were merged into one ``ExerciseTemplate``
+(custom and dataset rows together, distinguished by an ``is_custom``
+column) after that nullable link let two different exercises collide onto
+one template (see :doc:`review` for the incident and
+:doc:`data_migration` for the merge itself) — and later split back into
+two tables, this time along the catalog/user-data line rather than the
+original per-user-row line, once a shared catalog across future users
+needed its own database (see "Database split" above; also :doc:`review`).
+``ExerciseTemplate`` additionally carries image/instructions metadata from
+the bundled dataset submodules (RepDB and/or the original
+exercises-dataset) that ``CustomExerciseTemplate`` has no use for — that
+and where they live are the only real differences between the two;
+filtering, editing, logging and stats are otherwise symmetric.
 
 Core tables
 -----------
@@ -68,6 +146,11 @@ Core tables
 
 ``MuscleGroup``
 ~~~~~~~~~~~~~~~~
+
+**Catalog** (shared) data — the app's one fixed list, used by dataset and
+custom exercises alike (a ``CustomExerciseTemplate.muscle_group_id``
+references this table too, just not as an enforced ``db.ForeignKey`` —
+see "Database split" above).
 
 .. list-table::
    :widths: 20 20 60
@@ -92,17 +175,21 @@ Core tables
 ``ExerciseTemplate``
 ~~~~~~~~~~~~~~~~~~~~~
 
-An exercise, the abstract idea of it — sourced from the bundled dataset
-submodules (RepDB at ``external/repdb-exercise-dataset`` and the original
+**Catalog** (shared) data — lives in the ``"catalog"`` bind, a separate
+database file; see "Database split" above. A dataset-sourced exercise,
+the abstract idea of it — sourced from the bundled dataset submodules
+(RepDB at ``external/repdb-exercise-dataset`` and the original
 ``external/exercises-dataset``, both imported by
-``scripts/seed_exercise_templates.py``) or authored by a user from scratch.
-A template can carry both sources' data: each source's own fields are stored
-exactly as that source provides them, RepDB's images/text/muscles are
-preferred wherever present, and the original's are the fallback. The
-app-owned fields (``name``, ``equipment``, ``tracking_type``,
-``muscle_group_id``, ``notes``, ``is_custom``) are set by seeding only when it
-creates the row, never refreshed on a re-run, so edits made in the app
-survive. See :doc:`features/exercise_library` for how these surface in the UI.
+``scripts/seed_exercise_templates.py``). A user-authored exercise is a
+``CustomExerciseTemplate`` instead (below), a different table in the
+other database, never a row here. A template can carry both dataset
+sources' data: each source's own fields are stored exactly as that source
+provides them, RepDB's images/text/muscles are preferred wherever
+present, and the original's are the fallback. The app-owned fields
+(``name``, ``equipment``, ``tracking_type``, ``muscle_group_id``) are set
+by seeding only when it creates the row, never refreshed on a re-run, so
+edits made in the app survive. See :doc:`features/exercise_library` for
+how these surface in the UI.
 
 .. list-table::
    :widths: 22 22 56
@@ -148,9 +235,13 @@ survive. See :doc:`features/exercise_library` for how these surface in the UI.
      - ``weight_reps`` / ``bodyweight_reps`` / ``time`` / ``cardio``. Drives
        which input fields the logging UI shows (see
        :ref:`data_model:Set tracking types`).
-   * - notes
-     - text, nullable
-     - Free-text (form cues, etc.)
+   * - (``notes`` property)
+     - computed, not a column
+     - This user's own note about this exercise (e.g. form cues), read from
+       ``CatalogExerciseNote`` (user data, the other database) and written
+       through a property setter that creates/updates/deletes that row --
+       see :ref:`model-catalogexercisenote`. Not a real column here, since
+       a note is personal commentary, not catalog data.
    * - category / body_part / target_muscle / muscle_group
      - string, nullable
      - The dataset's own vocabulary/classification (e.g. ``body_part:
@@ -199,13 +290,22 @@ survive. See :doc:`features/exercise_library` for how these surface in the UI.
        the shown image/text came from — ``© Gym visual — https://gymvisual.com/``
        or ``Exercise data by RepDB (repdb.co) — https://repdb.co`` — shown
        wherever the image is displayed.
-   * - is_custom
-     - bool
-     - ``false`` for dataset-sourced templates, ``true`` for
-       user-authored ones.
    * - created_at
      - datetime
      -
+   * - (``is_custom`` property)
+     - computed, not a column
+     - Always ``False`` here (a custom exercise is never a row in this
+       table) — kept as a property so code checking ``exercise.is_custom``
+       works the same on either this or a ``CustomExerciseTemplate``,
+       without an ``isinstance`` check at every call site.
+   * - (``ref`` property)
+     - computed, not a column
+     - ``("catalog", self.id)`` — a collision-free identity for this
+       exercise (plain ``id`` isn't unique across the catalog/custom
+       split — see "Database split" above). Compare against
+       ``CustomExerciseTemplate.ref``'s ``("custom", id)``, and
+       ``WorkoutExercise``/``TemplateExercise``'s own ``.exercise_ref``.
    * - (``is_stretch`` property)
      - computed, not a column
      - ``True`` when ``category == "stretching"`` or the exercise's
@@ -217,17 +317,103 @@ survive. See :doc:`features/exercise_library` for how these surface in the UI.
        muscle group upstream and so are *not* caught by this — known,
        not yet corrected.
 
+.. _model-customexercisetemplate:
+
+``CustomExerciseTemplate``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**User data** — lives in the default bind, this user's own database. An
+exercise authored from scratch rather than sourced from a dataset. Exposes
+the same read interface as ``ExerciseTemplate`` wherever the two are used
+interchangeably (``is_custom``, ``is_stretch``, ``ref``,
+``primary_muscles``/``secondary_muscles``, and every field
+``serialize_exercise_template`` reads) so calling code doesn't need to
+know or care which one it got; dataset-only fields it has no use for
+(``external_id``, ``instructions``, image paths, ...) are plain class
+attributes returning ``None``/empty rather than real columns, since
+nothing ever sets them for a custom exercise.
+
+.. list-table::
+   :widths: 22 22 56
+   :header-rows: 1
+
+   * - Column
+     - Type
+     - Notes
+   * - id
+     - PK
+     - Its own sequence, independent of ``ExerciseTemplate.id`` — the two
+       can and do collide (see "Database split" above); never compared
+       against an ``ExerciseTemplate`` id without also checking which
+       table it came from.
+   * - name
+     - string
+     -
+   * - equipment
+     - string, nullable
+     - This app's fixed vocabulary, same as ``ExerciseTemplate.equipment``.
+   * - tracking_type
+     - enum, nullable
+     - Same ``TRACKING_TYPES`` as ``ExerciseTemplate``.
+   * - muscle_group_id
+     - int, nullable
+     - References the catalog's ``MuscleGroup.id`` — not a ``db.ForeignKey``
+       (that table is in the other database file, which SQLite can't
+       enforce a constraint across), resolved at the app layer instead.
+   * - notes
+     - text, nullable
+     - A real column here (unlike ``ExerciseTemplate.notes``) — this whole
+       row already belongs to one user, so there's no shared-row problem
+       to route around with an overlay table.
+   * - primary_muscles / secondary_muscles
+     - JSON list of strings, nullable
+     - Canonical muscle slugs directly (e.g. ``["pectoralis_major"]``), not
+       via a link table — a slug is already a stable, self-describing
+       identifier that doesn't need a row of its own the way the
+       catalog's muscle-name reconciliation does. Exposed as Python
+       properties of the same name, so reading/writing them looks
+       identical to ``ExerciseTemplate``'s ``ExerciseMuscle``-backed ones.
+   * - created_at
+     - datetime
+     -
+
+.. _model-catalogexercisenote:
+
+``CatalogExerciseNote``
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**User data** — lives in the default bind. This user's own note about a
+*catalog* exercise (see ``ExerciseTemplate.notes`` above). One row per
+noted exercise; a blank note deletes the row rather than storing an empty
+string.
+
+.. list-table::
+   :widths: 22 22 56
+   :header-rows: 1
+
+   * - Column
+     - Type
+     - Notes
+   * - exercise_id
+     - PK, int
+     - References the catalog's ``ExerciseTemplate.id`` — not a
+       ``db.ForeignKey``, same reason as ``CustomExerciseTemplate.muscle_group_id``.
+   * - notes
+     - text
+     -
+
 .. _model-muscle:
 
 ``Muscle``
 ~~~~~~~~~~~
 
-One row per canonical muscle (35 of them) — the vocabulary every exercise's
-worked muscles, every strength score, and the muscle-recency/body-map
-features all key off of. ``services/muscle_catalog.py`` is the only place
-that resolves a dataset's raw muscle wording (``pectorals``, ``chest``,
-...) to one of these; everywhere else in the app, a muscle is just its
-``slug``.
+**Catalog** (shared) data. One row per canonical muscle (35 of them) — the
+vocabulary every catalog exercise's worked muscles key off of.
+``services/muscle_catalog.py`` is the only place that resolves a
+dataset's raw muscle wording (``pectorals``, ``chest``, ...) to one of
+these; everywhere else in the app, a muscle is just its ``slug`` — which
+is also why a ``CustomExerciseTemplate`` doesn't link here at all, just
+stores slug strings directly (see above).
 
 .. list-table::
    :widths: 22 22 56
@@ -256,8 +442,10 @@ stored in the database at all; see :doc:`features/strength_score` and
 ``ExerciseMuscle``
 ~~~~~~~~~~~~~~~~~~~~
 
-The link table behind ``ExerciseTemplate.primary_muscles`` /
-``secondary_muscles`` (properties, not real columns — see above).
+**Catalog** (shared) data. The link table behind
+``ExerciseTemplate.primary_muscles`` / ``secondary_muscles`` (properties,
+not real columns — see above); only ever links a *catalog* exercise — a
+``CustomExerciseTemplate`` never has rows here (see above).
 
 .. list-table::
    :widths: 22 22 56
@@ -326,8 +514,21 @@ A saved, reusable shape for a workout ("routine" in Strong's terms).
      - FK -> WorkoutTemplate
      - Cascade delete with template
    * - exercise_id
-     - FK -> ExerciseTemplate
-     -
+     - int, nullable
+     - References the catalog's ``ExerciseTemplate.id`` — not a
+       ``db.ForeignKey`` (different database file; see "Database split"
+       above). Exactly one of this and ``custom_exercise_id`` is set,
+       enforced by a ``CHECK`` constraint
+       (``ExerciseReferenceMixin``, ``models/exercise_reference.py``).
+   * - custom_exercise_id
+     - FK -> CustomExerciseTemplate, nullable
+     - Same database as this table, so a real enforced foreign key. See
+       ``exercise_id`` above.
+   * - (``exercise`` property)
+     - computed, not a column
+     - Whichever of the two is actually set, resolved from whichever
+       database it lives in — code reads ``te.exercise`` rather than
+       branching on the two columns itself.
    * - position
      - int
      - Order within the template
@@ -423,8 +624,16 @@ One exercise block within a workout.
      - FK -> Workout
      - Cascade delete with workout
    * - exercise_id
-     - FK -> ExerciseTemplate
-     -
+     - int, nullable
+     - References the catalog's ``ExerciseTemplate.id`` — see
+       ``TemplateExercise.exercise_id`` above; same two-column,
+       exactly-one-set design (``ExerciseReferenceMixin``).
+   * - custom_exercise_id
+     - FK -> CustomExerciseTemplate, nullable
+     - See ``TemplateExercise.custom_exercise_id`` above.
+   * - (``exercise`` property)
+     - computed, not a column
+     - See ``TemplateExercise.exercise`` above.
    * - position
      - int
      - Order within the workout
