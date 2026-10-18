@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
+import type { ExerciseRef } from '../lib/exerciseRef'
 import type { StrengthPoint, Workout, WorkoutExercise, WorkoutSet, WorkoutStrength, WorkoutSummary } from '../types'
 
 export const workoutKeys = {
@@ -127,8 +128,7 @@ export function useLinkWorkoutExercises(workoutId: number) {
 export function useAddWorkoutExercise(workoutId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (exerciseId: number) =>
-      api.post<Workout>(`/workouts/${workoutId}/exercises`, { exercise_id: exerciseId }),
+    mutationFn: (ref: ExerciseRef) => api.post<Workout>(`/workouts/${workoutId}/exercises`, ref),
     onSuccess: () => invalidateWorkout(qc, workoutId),
   })
 }

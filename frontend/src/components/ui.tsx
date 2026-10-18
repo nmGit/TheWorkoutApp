@@ -53,12 +53,19 @@ export function ErrorState({ message }: { message: string }) {
   return <p className="py-12 text-center text-sm text-danger">{message}</p>
 }
 
-export function ViewExerciseButton({ exerciseId }: { exerciseId: number }) {
+export function ViewExerciseButton({
+  exerciseId,
+  customExerciseId,
+}: {
+  exerciseId: number | null
+  customExerciseId?: number | null
+}) {
   const navigate = useNavigate()
+  const target = customExerciseId != null ? `/exercises/${customExerciseId}?custom=1` : `/exercises/${exerciseId}`
   return (
     <button
       type="button"
-      onClick={() => navigate(`/exercises/${exerciseId}`)}
+      onClick={() => navigate(target)}
       title="View exercise page (history & progress chart)"
       aria-label="View exercise page"
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-border/40 hover:text-fg"

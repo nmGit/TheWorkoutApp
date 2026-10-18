@@ -12,6 +12,7 @@ import { TemplateMusclesHeader } from '../components/WorkoutMuscles'
 import { Button, DragHandle, LoadingState, PageTitle, ViewExerciseButton } from '../components/ui'
 import { useUndo } from '../context/UndoContext'
 import { useDragReorder } from '../hooks/useDragReorder'
+import { refForExercise } from '../lib/exerciseRef'
 import { isPaired, toggleSupersetLink } from '../lib/supersets'
 import type { ExerciseTemplate, TemplateExercise } from '../types'
 
@@ -48,6 +49,7 @@ export function TemplateEditorPage() {
     // The plan is the set counts and the rep range. Weights come from the last session and progress from it.
     const payload: TemplateExerciseInput[] = next.map((e) => ({
       exercise_id: e.exercise_id,
+      custom_exercise_id: e.custom_exercise_id,
       target_sets: e.target_sets,
       warmup_sets: e.warmup_sets,
       drop_sets: e.drop_sets,
@@ -79,7 +81,7 @@ export function TemplateEditorPage() {
       ...exercises,
       {
         id: -Date.now(),
-        exercise_id: exercise.id,
+        ...refForExercise(exercise),
         exercise_name: exercise.name,
         position: exercises.length,
         target_sets: 3,
@@ -145,7 +147,7 @@ export function TemplateEditorPage() {
                   leading={<DragHandle handleProps={dragReorder.getHandleProps(ex.id)} isDragging={dragReorder.isBeingDragged(ex.id)} />}
                   actions={
                     <>
-                      <ViewExerciseButton exerciseId={ex.exercise_id} />
+                      <ViewExerciseButton exerciseId={ex.exercise_id} customExerciseId={ex.custom_exercise_id} />
                       <ExerciseMenu
                         items={[
                           ...(i < exercises.length - 1

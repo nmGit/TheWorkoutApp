@@ -1,13 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from './client'
+import { refParts, type ExerciseRef } from '../lib/exerciseRef'
 import type { DashboardStats, ExerciseStats } from '../types'
 
-export function useExerciseStats(id: number | undefined, metric?: string, range = 'all') {
+export function useExerciseStats(ref: Partial<ExerciseRef> | undefined, metric?: string, range = 'all') {
+  const { id, isCustom } = refParts(ref)
   const search = new URLSearchParams({ range })
   if (metric) search.set('metric', metric)
+  const path = isCustom ? `/custom-exercises/${id}/stats` : `/exercises/${id}/stats`
   return useQuery({
-    queryKey: ['exercise-stats', id, metric, range],
-    queryFn: () => api.get<ExerciseStats>(`/exercises/${id}/stats?${search.toString()}`),
+    queryKey: ['exercise-stats', id, isCustom, metric, range],
+    queryFn: () => api.get<ExerciseStats>(`${path}?${search.toString()}`),
     enabled: id !== undefined,
   })
 }

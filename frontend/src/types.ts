@@ -127,7 +127,10 @@ export interface PlanPreviewSet {
 
 export interface WorkoutExercise {
   id: number
-  exercise_id: number
+  /** Exactly one of exercise_id (catalog) / custom_exercise_id (this user's own) is set -- the
+   * two live in separate databases now, see docs/data_model.rst "Database split". */
+  exercise_id: number | null
+  custom_exercise_id: number | null
   exercise_name: string | null
   tracking_type: TrackingType | null
   position: number
@@ -195,7 +198,10 @@ export interface WorkoutSummary extends Omit<Workout, 'exercises'> {
 
 export interface TemplateExercise {
   id: number
-  exercise_id: number
+  /** Exactly one of exercise_id (catalog) / custom_exercise_id (this user's own) is set -- see
+   * WorkoutExercise. */
+  exercise_id: number | null
+  custom_exercise_id: number | null
   exercise_name: string | null
   position: number
   /** Working sets a workout starts with. */
@@ -262,6 +268,7 @@ export interface ExerciseStats {
 
 export interface RecentPr {
   exercise_id: number
+  is_custom: boolean
   exercise_name: string
   metric: string
   value: number

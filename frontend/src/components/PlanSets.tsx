@@ -26,8 +26,8 @@ export function PlanSets({
   onChange: (patch: Partial<Pick<TemplateExercise, 'warmup_sets' | 'target_sets' | 'drop_sets' | 'target_reps'>>) => void
 }) {
   const settings = useAppSettings()
-  const { data: history } = useExerciseHistory(exercise.exercise_id)
-  const { data: preview } = useExercisePlanPreview(exercise.exercise_id, {
+  const { data: history } = useExerciseHistory(exercise)
+  const { data: preview } = useExercisePlanPreview(exercise, {
     warmupSets: exercise.warmup_sets,
     targetSets: exercise.target_sets ?? 1,
     dropSets: exercise.drop_sets,

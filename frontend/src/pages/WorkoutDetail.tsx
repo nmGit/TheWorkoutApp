@@ -96,8 +96,8 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
   const updateSet = useUpdateSet(workout.id)
   const deleteSet = useDeleteSet(workout.id)
   const { deleteWithUndo, isHidden } = useUndo()
-  const { data: exercise } = useExerciseTemplate(workoutExercise.exercise_id)
-  const { data: stats } = useExerciseStats(workoutExercise.exercise_id)
+  const { data: exercise } = useExerciseTemplate(workoutExercise)
+  const { data: stats } = useExerciseStats(workoutExercise)
   const [editingNote, setEditingNote] = useState<NoteKind | null>(null)
 
   const isPrWorkout = stats
@@ -115,7 +115,10 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
       }
       actions={
         <>
-          <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
+          <ViewExerciseButton
+            exerciseId={workoutExercise.exercise_id}
+            customExerciseId={workoutExercise.custom_exercise_id}
+          />
           <ExerciseMenu label="Exercise actions" items={noteMenuItems(setEditingNote)} />
         </>
       }

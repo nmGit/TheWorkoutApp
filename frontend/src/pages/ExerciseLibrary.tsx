@@ -44,7 +44,7 @@ export function ExerciseLibraryPage() {
   }, [items, groups])
 
   const handleSelect = (template: ExerciseTemplate) => {
-    navigate(`/exercises/${template.id}`)
+    navigate(template.is_custom ? `/exercises/${template.id}?custom=1` : `/exercises/${template.id}`)
   }
 
   return (

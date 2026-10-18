@@ -23,7 +23,9 @@ export function useTemplate(id: number | undefined) {
 }
 
 export interface TemplateExerciseInput {
-  exercise_id: number
+  /** Exactly one of these two -- see WorkoutExercise in types.ts. */
+  exercise_id?: number | null
+  custom_exercise_id?: number | null
   target_sets?: number | null
   warmup_sets?: number
   drop_sets?: number

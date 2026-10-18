@@ -38,9 +38,9 @@ export function ExerciseNotesPanel({
   editing: NoteKind | null
   onDone: () => void
 }) {
-  const { data: exercise } = useExerciseTemplate(workoutExercise.exercise_id)
+  const { data: exercise } = useExerciseTemplate(workoutExercise)
   const updateInstance = useUpdateWorkoutExercise(workoutId)
-  const updateTemplate = useUpdateExerciseTemplate(workoutExercise.exercise_id)
+  const updateTemplate = useUpdateExerciseTemplate(workoutExercise)
 
   const templateNote = exercise?.notes ?? null
   const instanceNote = workoutExercise.notes

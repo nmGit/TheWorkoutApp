@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useExerciseHistory, useExerciseTemplate } from '../api/exerciseTemplates'
 import { useExerciseStats } from '../api/stats'
+import type { ExerciseRef } from '../lib/exerciseRef'
 import { MuscleMapPair } from '../components/MuscleMap'
 import { PoseImages } from '../components/PoseImages'
 import { ProgressChart } from '../components/ProgressChart'
@@ -24,15 +25,19 @@ const METRIC_LABELS: Record<string, string> = {
 
 export function ExerciseDetailPage() {
   const { id } = useParams()
-  const exerciseId = Number(id)
+  const [searchParams] = useSearchParams()
+  const isCustom = searchParams.get('custom') === '1'
+  const ref: ExerciseRef = isCustom
+    ? { exercise_id: null, custom_exercise_id: Number(id) }
+    : { exercise_id: Number(id), custom_exercise_id: null }
   const settings = useAppSettings()
-  const { data: exercise } = useExerciseTemplate(exerciseId)
-  const { data: history } = useExerciseHistory(exerciseId)
+  const { data: exercise } = useExerciseTemplate(ref)
+  const { data: history } = useExerciseHistory(ref)
 
   const defaultMetric = exercise?.tracking_type === 'cardio' ? 'distance' : 'est_1rm'
   const [metric, setMetric] = useState<string | undefined>(undefined)
   const activeMetric = metric ?? defaultMetric
-  const { data: stats } = useExerciseStats(exerciseId, activeMetric)
+  const { data: stats } = useExerciseStats(ref, activeMetric)
 
   if (!exercise) return <LoadingState />
 

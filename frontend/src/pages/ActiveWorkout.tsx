@@ -27,6 +27,7 @@ import { useDragReorder } from '../hooks/useDragReorder'
 import { ExerciseCard } from '../components/ExerciseCard'
 import { ExerciseList } from '../components/ExerciseList'
 import { formatElapsed } from '../lib/format'
+import { refForExercise } from '../lib/exerciseRef'
 import { progressionBaseline } from '../lib/progressionTone'
 import { isPaired } from '../lib/supersets'
 import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
@@ -89,8 +90,13 @@ export function ActiveWorkoutPage() {
       // kind of drift than "reordered", so it's left alone rather than
       // guessing at merging membership too.
       if (template && workout.template_id) {
-        const workoutOrder = workout.exercises.map((we) => we.exercise_id)
-        const templateOrder = template.exercises.map((te) => te.exercise_id)
+        // A plain exercise_id isn't a unique key on its own anymore -- a catalog and a custom
+        // exercise can share the same id (two separate databases, two separate id sequences;
+        // see lib/exerciseRef.ts) -- so comparisons here use both fields together as one key.
+        const refKey = (ref: { exercise_id: number | null; custom_exercise_id: number | null }) =>
+          `${ref.exercise_id ?? ''}:${ref.custom_exercise_id ?? ''}`
+        const workoutOrder = workout.exercises.map(refKey)
+        const templateOrder = template.exercises.map(refKey)
         const sameSet = [...workoutOrder].sort().join(',') === [...templateOrder].sort().join(',')
         const sameOrder = workoutOrder.join(',') === templateOrder.join(',')
         if (sameSet && !sameOrder) {
@@ -98,10 +104,11 @@ export function ActiveWorkoutPage() {
             `Apply this exercise order to "${template.name}" too? Choose Cancel to keep it just for this workout.`,
           )
           if (propagate) {
-            const reordered: TemplateExerciseInput[] = workoutOrder.map((exerciseId) => {
-              const te = template.exercises.find((t) => t.exercise_id === exerciseId)!
+            const reordered: TemplateExerciseInput[] = workoutOrder.map((key) => {
+              const te = template.exercises.find((t) => refKey(t) === key)!
               return {
                 exercise_id: te.exercise_id,
+                custom_exercise_id: te.custom_exercise_id,
                 target_sets: te.target_sets,
                 warmup_sets: te.warmup_sets,
                 drop_sets: te.drop_sets,
@@ -229,7 +236,7 @@ export function ActiveWorkoutPage() {
         <ExercisePicker
           onClose={() => setPickerOpen(false)}
           onSelect={async (exercise: ExerciseTemplate) => {
-            await addExercise.mutateAsync(exercise.id)
+            await addExercise.mutateAsync(refForExercise(exercise))
             setPickerOpen(false)
           }}
         />
@@ -276,7 +283,7 @@ function ExerciseBlock({
   const removeExercise = useRemoveWorkoutExercise(workout.id)
   const { deleteWithUndo, isHidden } = useUndo()
   const [editingNote, setEditingNote] = useState<NoteKind | null>(null)
-  const { data: history } = useExerciseHistory(workoutExercise.exercise_id)
+  const { data: history } = useExerciseHistory(workoutExercise)
 
   const previousSets: WorkoutSet[] = history?.items.find((item) => item.workout_id !== workout.id)?.sets ?? []
   const previousBaseline = progressionBaseline(previousSets)
@@ -322,7 +329,10 @@ function ExerciseBlock({
       leading={<DragHandle handleProps={handleProps} isDragging={isDragging} />}
       actions={
         <>
-          <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
+          <ViewExerciseButton
+            exerciseId={workoutExercise.exercise_id}
+            customExerciseId={workoutExercise.custom_exercise_id}
+          />
           <ExerciseMenu
             label="Exercise actions"
             items={[

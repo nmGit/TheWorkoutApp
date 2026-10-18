@@ -196,7 +196,7 @@ export function HomePage() {
                 {dashboard.recent_prs.map((pr, i) => (
                   <Link
                     key={i}
-                    to={`/exercises/${pr.exercise_id}`}
+                    to={pr.is_custom ? `/exercises/${pr.exercise_id}?custom=1` : `/exercises/${pr.exercise_id}`}
                     title={`View ${pr.exercise_name}'s exercise page`}
                     className="flex items-center justify-between px-4 py-3 hover:bg-border/20"
                   >
