@@ -18,10 +18,24 @@ export function formatShortDate(iso: string): string {
 }
 
 export function formatDuration(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60)
-  const s = Math.abs(totalSeconds % 60)
+  // Format the size, then add the sign: flooring a negative number gives the wrong minutes.
+  const size = Math.abs(totalSeconds)
+  const m = Math.floor(size / 60)
+  const s = size % 60
   const sign = totalSeconds < 0 ? '-' : ''
   return `${sign}${m}:${String(s).padStart(2, '0')}`
+}
+
+/** How long a finished workout took, as "52m" or "1h 05m". Null while it's still running. */
+export function formatWorkoutDuration(startedAt: string, completedAt: string | null): string | null {
+  if (!completedAt) return null
+  const minutes = Math.max(
+    0,
+    Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 60000),
+  )
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return hours > 0 ? `${hours}h ${String(rest).padStart(2, '0')}m` : `${rest}m`
 }
 
 /** A rest duration as M:SS ("1:30", "0:45"), the way the rest timer counts. */

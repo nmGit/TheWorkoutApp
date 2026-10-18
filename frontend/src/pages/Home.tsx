@@ -1,18 +1,30 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useDashboard } from '../api/stats'
-import { useActiveWorkout, useStartWorkout, useWorkouts } from '../api/workouts'
+import { useActiveWorkout, useStartWorkout, useStrengthHistory, useWorkouts } from '../api/workouts'
 import { useTemplates } from '../api/templates'
 import { useAppSettings } from '../context/SettingsContext'
 import { Button, Card, EmptyState, LoadingState, PageTitle } from '../components/ui'
-import { formatDate, formatWeight } from '../lib/format'
+import { formatDate, formatWeight, formatWorkoutDuration } from '../lib/format'
+import { useUndo } from '../context/UndoContext'
+import { StrengthMapThumb } from '../components/WorkoutMuscles'
+import { StrengthChart } from '../components/StrengthChart'
+import { RecencyCard } from '../components/RecencyCard'
+import { GenerateWorkout } from '../components/GenerateWorkout'
+import { BodyweightLog } from '../components/BodyweightLog'
 
 export function HomePage() {
   const navigate = useNavigate()
-  const { data: activeWorkout } = useActiveWorkout()
+  const { isHidden } = useUndo()
+  const { data: pendingActive } = useActiveWorkout()
+  const activeWorkout = pendingActive && !isHidden(`workout:${pendingActive.id}`) ? pendingActive : undefined
   const { data: dashboard, isLoading } = useDashboard()
-  const { data: recentWorkouts } = useWorkouts({ status: 'completed', limit: 4 })
+  const { data: strengthHistory } = useStrengthHistory()
+  const strengthById = new Map((strengthHistory ?? []).map((p) => [p.workout_id, p]))
+  const { data: rawRecent } = useWorkouts({ status: 'completed', limit: 4 })
+  const recentWorkouts = rawRecent?.filter((w) => !isHidden(`workout:${w.id}`))
   const { data: templates } = useTemplates()
+  const visibleTemplates = templates?.filter((t) => !isHidden(`template:${t.id}`))
   const startWorkout = useStartWorkout()
   const settings = useAppSettings()
   const [showTemplates, setShowTemplates] = useState(false)
@@ -29,7 +41,21 @@ export function HomePage() {
 
   return (
     <div className="space-y-4">
-      <PageTitle>WorkoutApp</PageTitle>
+      <PageTitle
+        action={
+          <a
+            href="/docs/overview.html"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        }
+      >
+        WorkoutApp
+      </PageTitle>
 
       {activeWorkout ? (
         <Card className="flex items-center justify-between border-accent bg-accent/5">
@@ -51,7 +77,7 @@ export function HomePage() {
           >
             Start empty workout
           </Button>
-          {templates && templates.length > 0 && (
+          {visibleTemplates && visibleTemplates.length > 0 && (
             <Button
               variant="secondary"
               className="w-full"
@@ -61,9 +87,10 @@ export function HomePage() {
               Start from template
             </Button>
           )}
+          <GenerateWorkout />
           {showTemplates && (
             <div className="space-y-1.5 pt-1">
-              {templates?.map((t) => (
+              {visibleTemplates?.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => handleStartFromTemplate(t.id)}
@@ -82,6 +109,18 @@ export function HomePage() {
       {isLoading && <LoadingState />}
 
       <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Muscle recency</h2>
+        <RecencyCard />
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Strength over time</h2>
+        <Card>
+          <StrengthChart points={strengthHistory ?? []} />
+        </Card>
+      </div>
+
+      <div>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Recent workouts</h2>
         {recentWorkouts && recentWorkouts.length === 0 ? (
           <EmptyState title="No workouts logged yet" hint="Start one above to see it here." />
@@ -92,11 +131,16 @@ export function HomePage() {
                 key={w.id}
                 to={`/history/${w.id}`}
                 title={`View "${w.name}" from ${formatDate(w.started_at)}`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-border/20"
+                className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-border/20"
               >
-                <div>
+                <StrengthMapThumb strength={strengthById.get(w.id)} />
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{w.name}</p>
-                  <p className="text-xs text-muted">{formatDate(w.started_at)}</p>
+                  <p className="text-xs text-muted">
+                    {[formatDate(w.started_at), formatWorkoutDuration(w.started_at, w.completed_at)]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
                 </div>
                 <p className="text-xs text-muted">
                   {w.exercise_count} {w.exercise_count === 1 ? 'exercise' : 'exercises'}
@@ -112,6 +156,22 @@ export function HomePage() {
         >
           View all history →
         </Link>
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Body weight</h2>
+          <a
+            href="/docs/features/bodyweight_and_settings.html#body-weight-log"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's body weight section"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        </div>
+        <BodyweightLog />
       </div>
 
       {dashboard && (
@@ -136,7 +196,7 @@ export function HomePage() {
                 {dashboard.recent_prs.map((pr, i) => (
                   <Link
                     key={i}
-                    to={`/exercises/${pr.exercise_id}`}
+                    to={pr.is_custom ? `/exercises/${pr.exercise_id}?custom=1` : `/exercises/${pr.exercise_id}`}
                     title={`View ${pr.exercise_name}'s exercise page`}
                     className="flex items-center justify-between px-4 py-3 hover:bg-border/20"
                   >

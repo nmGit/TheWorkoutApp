@@ -6,10 +6,21 @@ from werkzeug.utils import safe_join
 
 from app.extensions import db
 from app.models.exercise import EQUIPMENT_TYPES, TRACKING_TYPES, MuscleGroup
-from app.models.exercise_template import ExerciseTemplate
-from app.models.workout import Workout, WorkoutExercise
-from app.serializers import serialize_exercise_template, serialize_muscle_group, serialize_set
+from app.models.exercise_reference import exercise_ref_filter
+from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
+from app.models.workout import Workout, WorkoutExercise, WorkoutSet
+from app.serializers import (
+    _num,
+    canonical_muscle_slug,
+    muscle_swatch,
+    serialize_exercise_template,
+    serialize_muscle_group,
+    serialize_set,
+)
 from app.services.dates import local_date
+from app.services.exercise_templates import GROUP_MUSCLES
+from app.services.search import fuzzy_rank
+from app.services.sets_plan import SetPlanSpec, plan_sets
 from app.validation import ApiError
 
 bp = Blueprint("exercise_templates", __name__, url_prefix="/api")
@@ -23,10 +34,74 @@ def list_muscle_groups():
     return jsonify([serialize_muscle_group(g) for g in groups])
 
 
-def _last_performed(template: ExerciseTemplate):
+@bp.get("/muscles/recency")
+def muscle_recency():
+    """Days since each muscle was last worked (muscles never worked are left out), with the
+    regions each one lights up on the body diagram. Days are in the server's local calendar."""
+    from datetime import date
+
+    from app.services.muscle_regions import regions_for
+    from app.services.recency import last_trained_dates
+
+    from app.services.recency import IN_NEED_DAYS
+
+    today = date.today()
+    return jsonify(
+        {
+            "in_need_days": IN_NEED_DAYS,
+            "muscles": {
+                slug: {
+                    "last_trained": day.isoformat(),
+                    "days_since": (today - day).days,
+                    "regions": regions_for(slug),
+                }
+                for slug, day in last_trained_dates().items()
+            },
+        }
+    )
+
+
+@bp.get("/muscle-groups/<int:group_id>/muscles")
+def list_group_muscles(group_id):
+    """The muscles that make up this group (e.g. "Pectoralis Major" under Chest),
+    sorted by name, limited to those the group's exercises actually train as primary
+    muscles. The group's membership comes from GROUP_MUSCLES, not from the exercises
+    alone, so a stray primary doesn't leak into the wrong group."""
+    group = db.session.get(MuscleGroup, group_id)
+    if group is None:
+        raise ApiError("Unknown muscle group", 404)
+    members = GROUP_MUSCLES.get(group.name, set())
+    found = {}
+    for t in ExerciseTemplate.query.filter_by(muscle_group_id=group_id):
+        for raw in t.primary_muscles or []:
+            slug = canonical_muscle_slug(raw)
+            if slug in members:
+                found.setdefault(slug, muscle_swatch(raw))
+    return jsonify(
+        sorted(
+            ({"slug": slug, **swatch} for slug, swatch in found.items()),
+            key=lambda m: m["name"],
+        )
+    )
+
+
+def _template_ids_for_muscle(slug: str) -> list[int]:
+    """Exercises that work this muscle, primary or secondary, through the muscle table."""
+    from app.models.muscle import ExerciseMuscle, Muscle
+
+    rows = (
+        db.session.query(ExerciseMuscle.exercise_id)
+        .join(Muscle, Muscle.id == ExerciseMuscle.muscle_id)
+        .filter(Muscle.slug == slug)
+        .all()
+    )
+    return [exercise_id for (exercise_id,) in rows]
+
+
+def _last_performed(template):
     we = (
         WorkoutExercise.query.join(Workout, WorkoutExercise.workout_id == Workout.id)
-        .filter(WorkoutExercise.exercise_id == template.id)
+        .filter(exercise_ref_filter(WorkoutExercise, template.ref))
         .filter(Workout.completed_at.isnot(None))
         .order_by(Workout.started_at.desc())
         .first()
@@ -51,32 +126,67 @@ def _last_performed(template: ExerciseTemplate):
 
 @bp.get("/exercise-templates")
 def list_exercise_templates():
-    query = ExerciseTemplate.query
+    """Lists both the shared catalog (ExerciseTemplate) and the user's own exercises
+    (CustomExerciseTemplate) together -- the two live in separate databases now (see
+    docs/data_model.rst "Database split"), so this merges two queries in Python rather than
+    running one SQL query, same as the fuzzy-search path below already did."""
     q = request.args.get("q")
-    if q:
-        query = query.filter(ExerciseTemplate.name.ilike(f"%{q}%"))
     body_part = request.args.get("body_part")
-    if body_part:
-        query = query.filter(ExerciseTemplate.body_part == body_part)
     muscle_group_id = request.args.get("muscle_group_id", type=int)
-    if muscle_group_id:
-        if db.session.get(MuscleGroup, muscle_group_id) is None:
-            raise ApiError("Unknown muscle_group_id", 404)
-        query = query.filter(ExerciseTemplate.muscle_group_id == muscle_group_id)
+    if muscle_group_id and db.session.get(MuscleGroup, muscle_group_id) is None:
+        raise ApiError("Unknown muscle_group_id", 404)
+    muscle = request.args.get("muscle")
     equipment = request.args.get("equipment")
-    if equipment:
-        query = query.filter(ExerciseTemplate.equipment == equipment)
     tracking_type = request.args.get("tracking_type")
-    if tracking_type:
-        query = query.filter(ExerciseTemplate.tracking_type == tracking_type)
     is_custom = request.args.get("is_custom")
-    if is_custom is not None:
-        query = query.filter(ExerciseTemplate.is_custom == (is_custom.lower() == "true"))
+    include_catalog = is_custom is None or is_custom.lower() != "true"
+    include_custom = is_custom is None or is_custom.lower() == "true"
 
-    total = query.count()
+    candidates: list = []
+    if include_catalog:
+        query = ExerciseTemplate.query
+        if body_part:
+            query = query.filter(ExerciseTemplate.body_part == body_part)
+        if muscle_group_id:
+            query = query.filter(ExerciseTemplate.muscle_group_id == muscle_group_id)
+        if muscle:
+            query = query.filter(ExerciseTemplate.id.in_(_template_ids_for_muscle(muscle)))
+        if equipment:
+            query = query.filter(ExerciseTemplate.equipment == equipment)
+        if tracking_type:
+            query = query.filter(ExerciseTemplate.tracking_type == tracking_type)
+        candidates += query.all()
+    if include_custom and not body_part:
+        # body_part is dataset-only vocabulary -- a custom exercise never has one, so it can
+        # never match a body_part filter.
+        cquery = CustomExerciseTemplate.query
+        if muscle_group_id:
+            cquery = cquery.filter(CustomExerciseTemplate.muscle_group_id == muscle_group_id)
+        if equipment:
+            cquery = cquery.filter(CustomExerciseTemplate.equipment == equipment)
+        if tracking_type:
+            cquery = cquery.filter(CustomExerciseTemplate.tracking_type == tracking_type)
+        customs = cquery.all()
+        if muscle:
+            customs = [c for c in customs if muscle in c.primary_muscles or muscle in c.secondary_muscles]
+        candidates += customs
+
     limit = min(request.args.get("limit", default=40, type=int), MAX_LIMIT)
     offset = request.args.get("offset", default=0, type=int)
-    items = query.order_by(ExerciseTemplate.name).offset(offset).limit(limit).all()
+
+    if q:
+        # Ranked in Python, not by the database: word-order-independent, typo-tolerant
+        # matching (see services/search.py) isn't expressible as a single SQL filter, and the
+        # candidate set -- every exercise matching the *other* filters above, at most a couple
+        # thousand rows for this app -- is small enough to rank in memory on every request
+        # rather than needing a real search index.
+        ranked = fuzzy_rank(candidates, q)
+        total = len(ranked)
+        items = ranked[offset : offset + limit]
+    else:
+        candidates.sort(key=lambda t: t.name)
+        total = len(candidates)
+        items = candidates[offset : offset + limit]
 
     return jsonify(
         {
@@ -109,43 +219,6 @@ def exercise_template_facets():
     return jsonify({"body_parts": body_parts, "equipment": equipment})
 
 
-@bp.post("/exercise-templates")
-def create_exercise_template():
-    body = request.get_json(force=True) or {}
-    name = body.get("name")
-    if not name:
-        raise ApiError("Missing required field(s): name")
-
-    muscle_group_id = body.get("muscle_group_id")
-    if muscle_group_id is None:
-        raise ApiError("Missing required field(s): muscle_group_id")
-    group = db.session.get(MuscleGroup, muscle_group_id)
-    if group is None:
-        raise ApiError("Unknown muscle_group_id", 404)
-
-    equipment = body.get("equipment", "other")
-    if equipment not in EQUIPMENT_TYPES:
-        raise ApiError(f"equipment must be one of {EQUIPMENT_TYPES}")
-
-    tracking_type = body.get("tracking_type")
-    if tracking_type is None:
-        tracking_type = "bodyweight_reps" if equipment == "bodyweight" else "weight_reps"
-    if tracking_type not in TRACKING_TYPES:
-        raise ApiError(f"tracking_type must be one of {TRACKING_TYPES}")
-
-    template = ExerciseTemplate(
-        name=name,
-        muscle_group_id=muscle_group_id,
-        equipment=equipment,
-        tracking_type=tracking_type,
-        notes=body.get("notes"),
-        is_custom=True,
-    )
-    db.session.add(template)
-    db.session.commit()
-    return jsonify(serialize_exercise_template(template)), 201
-
-
 @bp.get("/exercise-templates/<int:template_id>")
 def get_exercise_template(template_id):
     template = db.session.get(ExerciseTemplate, template_id)
@@ -155,10 +228,93 @@ def get_exercise_template(template_id):
 
 
 @bp.patch("/exercise-templates/<int:template_id>")
-def update_exercise_template(template_id):
+def update_exercise_template_note(template_id):
+    """The one editable thing on a catalog exercise: this user's own note (see
+    CatalogExerciseNote) -- everything else is shared, common data this user-facing endpoint
+    doesn't let any one user change."""
     template = db.session.get(ExerciseTemplate, template_id)
     if template is None:
         raise ApiError("Exercise template not found", 404)
+    body = request.get_json(force=True) or {}
+    if "notes" in body:
+        template.notes = body["notes"]
+    db.session.commit()
+    return jsonify(serialize_exercise_template(template))
+
+
+@bp.delete("/exercise-templates/<int:template_id>")
+def delete_exercise_template(template_id):
+    """Always refused -- a catalog exercise is shared data, common to every user, not this
+    user's to delete. Kept as a route (rather than a plain 404/405) so a client gets a clear
+    reason rather than "not found"."""
+    if db.session.get(ExerciseTemplate, template_id) is None:
+        raise ApiError("Exercise template not found", 404)
+    raise ApiError("Cannot delete a dataset-sourced exercise", 409)
+
+
+def _require_name_and_group(body: dict) -> tuple[str, int]:
+    name = body.get("name")
+    if not name:
+        raise ApiError("Missing required field(s): name")
+    muscle_group_id = body.get("muscle_group_id")
+    if muscle_group_id is None:
+        raise ApiError("Missing required field(s): muscle_group_id")
+    if db.session.get(MuscleGroup, muscle_group_id) is None:
+        raise ApiError("Unknown muscle_group_id", 404)
+    return name, muscle_group_id
+
+
+def _validated_equipment(body: dict) -> str:
+    equipment = body.get("equipment", "other")
+    if equipment not in EQUIPMENT_TYPES:
+        raise ApiError(f"equipment must be one of {EQUIPMENT_TYPES}")
+    return equipment
+
+
+def _validated_tracking_type(body: dict, equipment: str) -> str:
+    tracking_type = body.get("tracking_type")
+    if tracking_type is None:
+        tracking_type = "bodyweight_reps" if equipment == "bodyweight" else "weight_reps"
+    if tracking_type not in TRACKING_TYPES:
+        raise ApiError(f"tracking_type must be one of {TRACKING_TYPES}")
+    return tracking_type
+
+
+@bp.post("/custom-exercise-templates")
+def create_custom_exercise_template():
+    """A user-authored exercise -- the only kind ``POST`` ever creates; dataset-sourced rows
+    only ever come from ``scripts/seed_exercise_templates.py``. See
+    ``models/exercise_template.py``'s ``CustomExerciseTemplate``."""
+    body = request.get_json(force=True) or {}
+    name, muscle_group_id = _require_name_and_group(body)
+    equipment = _validated_equipment(body)
+    tracking_type = _validated_tracking_type(body, equipment)
+
+    template = CustomExerciseTemplate(
+        name=name,
+        muscle_group_id=muscle_group_id,
+        equipment=equipment,
+        tracking_type=tracking_type,
+        notes=body.get("notes"),
+    )
+    db.session.add(template)
+    db.session.commit()
+    return jsonify(serialize_exercise_template(template)), 201
+
+
+@bp.get("/custom-exercise-templates/<int:template_id>")
+def get_custom_exercise_template(template_id):
+    template = db.session.get(CustomExerciseTemplate, template_id)
+    if template is None:
+        raise ApiError("Custom exercise template not found", 404)
+    return jsonify(serialize_exercise_template(template, last_performed=_last_performed(template)))
+
+
+@bp.patch("/custom-exercise-templates/<int:template_id>")
+def update_custom_exercise_template(template_id):
+    template = db.session.get(CustomExerciseTemplate, template_id)
+    if template is None:
+        raise ApiError("Custom exercise template not found", 404)
     body = request.get_json(force=True) or {}
 
     if "name" in body:
@@ -168,9 +324,7 @@ def update_exercise_template(template_id):
             raise ApiError("Unknown muscle_group_id", 404)
         template.muscle_group_id = body["muscle_group_id"]
     if "equipment" in body:
-        if body["equipment"] not in EQUIPMENT_TYPES:
-            raise ApiError(f"equipment must be one of {EQUIPMENT_TYPES}")
-        template.equipment = body["equipment"]
+        template.equipment = _validated_equipment(body)
     if "tracking_type" in body:
         if body["tracking_type"] not in TRACKING_TYPES:
             raise ApiError(f"tracking_type must be one of {TRACKING_TYPES}")
@@ -182,13 +336,11 @@ def update_exercise_template(template_id):
     return jsonify(serialize_exercise_template(template))
 
 
-@bp.delete("/exercise-templates/<int:template_id>")
-def delete_exercise_template(template_id):
-    template = db.session.get(ExerciseTemplate, template_id)
+@bp.delete("/custom-exercise-templates/<int:template_id>")
+def delete_custom_exercise_template(template_id):
+    template = db.session.get(CustomExerciseTemplate, template_id)
     if template is None:
-        raise ApiError("Exercise template not found", 404)
-    if not template.is_custom:
-        raise ApiError("Cannot delete a dataset-sourced exercise", 409)
+        raise ApiError("Custom exercise template not found", 404)
     if template.has_logged_sets():
         raise ApiError("Cannot delete an exercise with logged history", 409)
     db.session.delete(template)
@@ -247,18 +399,13 @@ def get_muscle_image(slug):
     return response
 
 
-@bp.get("/exercise-templates/<int:template_id>/history")
-def exercise_template_history(template_id):
-    template = db.session.get(ExerciseTemplate, template_id)
-    if template is None:
-        raise ApiError("Exercise template not found", 404)
-
+def _exercise_history_response(exercise_ref):
     limit = request.args.get("limit", default=20, type=int)
     offset = request.args.get("offset", default=0, type=int)
 
     query = (
         WorkoutExercise.query.join(Workout, WorkoutExercise.workout_id == Workout.id)
-        .filter(WorkoutExercise.exercise_id == template_id)
+        .filter(exercise_ref_filter(WorkoutExercise, exercise_ref))
         .filter(Workout.completed_at.isnot(None))
         .order_by(Workout.started_at.desc())
     )
@@ -276,3 +423,65 @@ def exercise_template_history(template_id):
     ]
 
     return jsonify({"total": total, "items": items})
+
+
+@bp.get("/exercise-templates/<int:template_id>/history")
+def exercise_template_history(template_id):
+    template = db.session.get(ExerciseTemplate, template_id)
+    if template is None:
+        raise ApiError("Exercise template not found", 404)
+    return _exercise_history_response(template.ref)
+
+
+@bp.get("/custom-exercise-templates/<int:template_id>/history")
+def custom_exercise_template_history(template_id):
+    template = db.session.get(CustomExerciseTemplate, template_id)
+    if template is None:
+        raise ApiError("Custom exercise template not found", 404)
+    return _exercise_history_response(template.ref)
+
+
+def _plan_preview_response(**ref_kwargs):
+    """Shared by both plan-preview routes below -- ref_kwargs is exercise_id= or
+    custom_exercise_id=, whichever SetPlanSpec needs for the exercise this request is about."""
+    spec = SetPlanSpec(
+        target_reps=request.args.get("target_reps") or None,
+        warmup_sets=request.args.get("warmup_sets", default=0, type=int),
+        target_sets=request.args.get("target_sets", default=1, type=int),
+        drop_sets=request.args.get("drop_sets", default=0, type=int),
+        **ref_kwargs,
+    )
+    return jsonify(
+        [
+            {
+                "is_warmup": p["is_warmup"],
+                "is_dropset": p["is_dropset"],
+                "weight": _num(p["weight"]),
+                "weight_unit": p["weight_unit"],
+                "reps": p["reps"],
+                "duration_seconds": p["duration_seconds"],
+                "is_progressed": p["is_progressed"],
+                "is_progression_active": p["is_progression_active"],
+            }
+            for p in plan_sets(spec)
+        ]
+    )
+
+
+@bp.get("/exercise-templates/<int:exercise_id>/plan-preview")
+def exercise_template_plan_preview(exercise_id):
+    """What starting a workout with this exercise would plan right now, given a hypothetical set
+    plan (the template editor's current, possibly unsaved, set counts and rep range) -- the same
+    progressive-overload calculation plan_sets uses to fill a real workout, run without creating
+    one. Query params mirror TemplateExercise: warmup_sets, target_sets, drop_sets, target_reps."""
+    if db.session.get(ExerciseTemplate, exercise_id) is None:
+        raise ApiError("Exercise template not found", 404)
+    return _plan_preview_response(exercise_id=exercise_id)
+
+
+@bp.get("/custom-exercise-templates/<int:exercise_id>/plan-preview")
+def custom_exercise_template_plan_preview(exercise_id):
+    """Same as exercise_template_plan_preview, for the user's own exercises."""
+    if db.session.get(CustomExerciseTemplate, exercise_id) is None:
+        raise ApiError("Custom exercise template not found", 404)
+    return _plan_preview_response(custom_exercise_id=exercise_id)

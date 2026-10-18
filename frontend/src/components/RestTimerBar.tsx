@@ -11,7 +11,7 @@ export function RestTimerBar() {
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]"
+      className="sticky top-0 z-40 border-b border-border bg-surface/95 px-4 py-3 shadow-[0_4px_12px_rgba(0,0,0,0.08)] backdrop-blur"
       role="status"
       aria-live="polite"
     >
@@ -39,7 +39,8 @@ export function RestTimerBar() {
             {timer.isExpired ? 'Rest over' : 'Resting'}
           </p>
           <p className={`text-xl font-semibold tabular-nums ${timer.isExpired ? 'text-muted' : 'text-fg'}`}>
-            {formatDuration(timer.secondsRemaining)}
+            {/* Past the end of the rest, the timer counts up as overtime. */}
+            {timer.secondsRemaining < 0 ? `+${formatDuration(-timer.secondsRemaining)}` : formatDuration(timer.secondsRemaining)}
           </p>
         </div>
 

@@ -12,6 +12,7 @@ frontend/dist/
 
 # Sphinx
 docs/build/
+docs/.venv/
 
 # Database / data
 data/*.db

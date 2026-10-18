@@ -1,7 +1,16 @@
 import pytest
 
 from app.extensions import db
-from app.models.exercise_template import ExerciseTemplate
+from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
+
+
+def _make_custom_template(**overrides):
+    defaults = dict(name="Custom Exercise", tracking_type="weight_reps")
+    defaults.update(overrides)
+    template = CustomExerciseTemplate(**defaults)
+    db.session.add(template)
+    db.session.commit()
+    return template
 
 
 def _make_template(**overrides):
@@ -20,7 +29,6 @@ def _make_template(**overrides):
         image_path="images/0001-2gPfomN.jpg",
         attribution="© Gym visual — https://gymvisual.com/",
         tracking_type="weight_reps",
-        is_custom=False,
     )
     defaults.update(overrides)
     template = ExerciseTemplate(**defaults)
@@ -41,6 +49,20 @@ def test_list_exercise_templates_search_and_pagination(client, app):
     assert body["items"][0]["name"] == "3/4 sit-up"
     assert body["items"][0]["image_url"] == f"/api/exercise-templates/{body['items'][0]['id']}/image"
     assert body["items"][0]["instruction_steps"] == ["Lie flat on your back...", "Curl up."]
+
+
+def test_list_exercise_templates_search_is_fuzzy(client, app):
+    with app.app_context():
+        _make_template(external_id="0001", name="Bench Press (Barbell)")
+        _make_template(external_id="0002", name="Treadmill Run")
+
+    # Word order independent -- a plain substring match rejects this.
+    body = client.get("/api/exercise-templates?q=press bench").get_json()
+    assert [i["name"] for i in body["items"]] == ["Bench Press (Barbell)"]
+
+    # Tolerates a typo.
+    body = client.get("/api/exercise-templates?q=bemch press").get_json()
+    assert [i["name"] for i in body["items"]] == ["Bench Press (Barbell)"]
 
 
 def test_list_exercise_templates_filters_by_muscle_group_id(client, app, chest_group):
@@ -64,9 +86,7 @@ def test_list_exercise_templates_muscle_group_filter_includes_custom_templates(c
     # just use the same real column.
     with app.app_context():
         _make_template(external_id="0001", name="barbell bench press", muscle_group_id=chest_group.id)
-        _make_template(
-            external_id=None, name="Cable Crossover", muscle_group_id=chest_group.id, is_custom=True
-        )
+        _make_custom_template(name="Cable Crossover", muscle_group_id=chest_group.id)
 
     resp = client.get(f"/api/exercise-templates?muscle_group_id={chest_group.id}")
     body = resp.get_json()
@@ -101,7 +121,7 @@ def test_exercise_template_image_404_when_missing(client, app):
 
 def test_create_custom_exercise_template(client, chest_group):
     resp = client.post(
-        "/api/exercise-templates",
+        "/api/custom-exercise-templates",
         json={"name": "Cable Crossover", "muscle_group_id": chest_group.id, "tracking_type": "weight_reps"},
     )
     assert resp.status_code == 201
@@ -110,14 +130,14 @@ def test_create_custom_exercise_template(client, chest_group):
     assert body["muscle_group_name"] == "Chest"
     assert body["image_url"] is None
 
-    template = db.session.get(ExerciseTemplate, body["id"])
+    template = db.session.get(CustomExerciseTemplate, body["id"])
     assert template.name == "Cable Crossover"
     assert template.is_custom is True
 
 
 def test_create_exercise_template_rejects_bad_tracking_type(client, chest_group):
     resp = client.post(
-        "/api/exercise-templates",
+        "/api/custom-exercise-templates",
         json={"name": "X", "muscle_group_id": chest_group.id, "tracking_type": "not_a_type"},
     )
     assert resp.status_code == 400
@@ -125,7 +145,7 @@ def test_create_exercise_template_rejects_bad_tracking_type(client, chest_group)
 
 def test_create_exercise_template_and_list_filter(client, chest_group):
     resp = client.post(
-        "/api/exercise-templates",
+        "/api/custom-exercise-templates",
         json={"name": "Cable Crossover", "muscle_group_id": chest_group.id, "tracking_type": "weight_reps"},
     )
     assert resp.status_code == 201
@@ -143,7 +163,7 @@ def test_update_exercise_template(client, bench_press):
 
 def test_cannot_delete_dataset_sourced_template(client, app):
     with app.app_context():
-        template = _make_template(external_id="0001", is_custom=False)
+        template = _make_template(external_id="0001")
         template_id = template.id
 
     resp = client.delete(f"/api/exercise-templates/{template_id}")
@@ -152,11 +172,11 @@ def test_cannot_delete_dataset_sourced_template(client, app):
 
 def test_delete_unused_custom_template(client, chest_group):
     created = client.post(
-        "/api/exercise-templates",
+        "/api/custom-exercise-templates",
         json={"name": "Cable Crossover", "muscle_group_id": chest_group.id},
     ).get_json()
 
-    resp = client.delete(f"/api/exercise-templates/{created['id']}")
+    resp = client.delete(f"/api/custom-exercise-templates/{created['id']}")
     assert resp.status_code == 204
 
 
@@ -269,12 +289,18 @@ def test_muscle_swatches_link_an_image_only_when_repdb_has_one(client, app, data
             mechanic="compound",
         ).id
     detail = client.get(f"/api/exercise-templates/{template_id}").get_json()
+    # The legacy "pectorals" is the same muscle as the primary pectoralis_major, so it isn't
+    # listed twice. "Upper Back" is a separate muscle.
     assert detail["primary_muscles"] == [
-        {"name": "Pectoralis Major", "image_url": "/api/muscles/pectoralis_major/image"}
+        {
+            "slug": "pectoralis_major",
+            "name": "Pectoralis Major",
+            "image_url": "/api/muscles/pectoralis_major/image",
+            "regions": ["chest"],
+        }
     ]
     assert detail["secondary_muscles"] == [
-        {"name": "Pectorals", "image_url": None},
-        {"name": "Upper Back", "image_url": None},
+        {"slug": "upper_back", "name": "Upper Back", "image_url": None, "regions": ["upper-back"]},
     ]
     assert detail["tips"] == ["Keep your feet flat."]
     assert (detail["difficulty"], detail["mechanic"]) == ("beginner", "compound")

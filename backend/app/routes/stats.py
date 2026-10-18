@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.extensions import db
-from app.models.exercise_template import ExerciseTemplate
+from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
 from app.models.settings import UserSettings
 from app.services import stats as stats_service
 from app.validation import ApiError
@@ -9,12 +9,7 @@ from app.validation import ApiError
 bp = Blueprint("stats", __name__, url_prefix="/api")
 
 
-@bp.get("/exercises/<int:exercise_id>/stats")
-def exercise_stats(exercise_id):
-    exercise = db.session.get(ExerciseTemplate, exercise_id)
-    if exercise is None:
-        raise ApiError("Exercise not found", 404)
-
+def _exercise_stats_response(exercise):
     settings = UserSettings.get()
     metric = request.args.get("metric") or stats_service.default_metric_for(exercise)
     range_key = request.args.get("range", "all")
@@ -32,6 +27,22 @@ def exercise_stats(exercise_id):
             "personal_records": prs,
         }
     )
+
+
+@bp.get("/exercises/<int:exercise_id>/stats")
+def exercise_stats(exercise_id):
+    exercise = db.session.get(ExerciseTemplate, exercise_id)
+    if exercise is None:
+        raise ApiError("Exercise not found", 404)
+    return _exercise_stats_response(exercise)
+
+
+@bp.get("/custom-exercises/<int:exercise_id>/stats")
+def custom_exercise_stats(exercise_id):
+    exercise = db.session.get(CustomExerciseTemplate, exercise_id)
+    if exercise is None:
+        raise ApiError("Exercise not found", 404)
+    return _exercise_stats_response(exercise)
 
 
 @bp.get("/stats/dashboard")

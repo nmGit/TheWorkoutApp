@@ -6,27 +6,41 @@ import {
   useAddWorkoutExercise,
   useDeleteSet,
   useDeleteWorkout,
+  useLinkWorkoutExercises,
   useRemoveWorkoutExercise,
   useReorderWorkoutExercises,
   useUpdateSet,
   useUpdateWorkout,
+  useUpdateWorkoutExercise,
 } from '../api/workouts'
 import { useExerciseHistory } from '../api/exerciseTemplates'
 import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
+import { ExerciseMenu } from '../components/ExerciseMenu'
 import { ExercisePicker } from '../components/ExercisePicker'
+import { NameEditor } from '../components/NameEditor'
 import { SetRow } from '../components/SetRow'
-import { Button, Card, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
+import { SupersetBar } from '../components/SupersetBar'
+import { Button, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { useGlobalRestTimer } from '../context/RestTimerContext'
 import { useDragReorder } from '../hooks/useDragReorder'
+import { ExerciseCard } from '../components/ExerciseCard'
+import { ExerciseList } from '../components/ExerciseList'
 import { formatElapsed } from '../lib/format'
+import { refForExercise } from '../lib/exerciseRef'
+import { progressionBaseline } from '../lib/progressionTone'
+import { isPaired } from '../lib/supersets'
 import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
+import { useUndo } from '../context/UndoContext'
+import { WorkoutMusclesHeader } from '../components/WorkoutMuscles'
+import { ExerciseNotesPanel, noteMenuItems, type NoteKind } from '../components/ExerciseNotes'
 
 export function ActiveWorkoutPage() {
   const navigate = useNavigate()
   const { data: workout, isLoading } = useActiveWorkout()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [elapsedTick, setElapsedTick] = useState(0)
+  const [finishError, setFinishError] = useState<string | null>(null)
 
   useEffect(() => {
     const id = setInterval(() => setElapsedTick((t) => t + 1), 30_000)
@@ -35,10 +49,13 @@ export function ActiveWorkoutPage() {
 
   const updateWorkout = useUpdateWorkout(workout?.id ?? -1)
   const deleteWorkout = useDeleteWorkout()
+  const { deleteWithUndo, isHidden } = useUndo()
   const addExercise = useAddWorkoutExercise(workout?.id ?? -1)
   const reorderExercises = useReorderWorkoutExercises(workout?.id ?? -1)
   const { data: template } = useTemplate(workout?.template_id ?? undefined)
   const updateTemplate = useUpdateTemplate(workout?.template_id ?? -1)
+  const linkExercises = useLinkWorkoutExercises(workout?.id ?? -1)
+  const updateWorkoutExercise = useUpdateWorkoutExercise(workout?.id ?? -1)
   const timer = useGlobalRestTimer()
 
   const dragReorder = useDragReorder(
@@ -64,44 +81,61 @@ export function ActiveWorkoutPage() {
   }
 
   const handleFinish = async () => {
-    // Offer to propagate a reordering back to the source template -- but
-    // only when the workout still has exactly the template's exercises,
-    // just in a different order. If exercises were also added/removed
-    // relative to the template, that's a different (and more ambiguous)
-    // kind of drift than "reordered", so it's left alone rather than
-    // guessing at merging membership too.
-    if (template && workout.template_id) {
-      const workoutOrder = workout.exercises.map((we) => we.exercise_id)
-      const templateOrder = template.exercises.map((te) => te.exercise_id)
-      const sameSet = [...workoutOrder].sort().join(',') === [...templateOrder].sort().join(',')
-      const sameOrder = workoutOrder.join(',') === templateOrder.join(',')
-      if (sameSet && !sameOrder) {
-        const propagate = confirm(
-          `Apply this exercise order to "${template.name}" too? Choose Cancel to keep it just for this workout.`,
-        )
-        if (propagate) {
-          const reordered: TemplateExerciseInput[] = workoutOrder.map((exerciseId) => {
-            const te = template.exercises.find((t) => t.exercise_id === exerciseId)!
-            return {
-              exercise_id: te.exercise_id,
-              target_sets: te.target_sets,
-              target_reps: te.target_reps,
-              target_weight: te.target_weight,
-            }
-          })
-          await updateTemplate.mutateAsync({ exercises: reordered })
+    setFinishError(null)
+    try {
+      // Offer to propagate a reordering back to the source template -- but
+      // only when the workout still has exactly the template's exercises,
+      // just in a different order. If exercises were also added/removed
+      // relative to the template, that's a different (and more ambiguous)
+      // kind of drift than "reordered", so it's left alone rather than
+      // guessing at merging membership too.
+      if (template && workout.template_id) {
+        // A plain exercise_id isn't a unique key on its own anymore -- a catalog and a custom
+        // exercise can share the same id (two separate databases, two separate id sequences;
+        // see lib/exerciseRef.ts) -- so comparisons here use both fields together as one key.
+        const refKey = (ref: { exercise_id: number | null; custom_exercise_id: number | null }) =>
+          `${ref.exercise_id ?? ''}:${ref.custom_exercise_id ?? ''}`
+        const workoutOrder = workout.exercises.map(refKey)
+        const templateOrder = template.exercises.map(refKey)
+        const sameSet = [...workoutOrder].sort().join(',') === [...templateOrder].sort().join(',')
+        const sameOrder = workoutOrder.join(',') === templateOrder.join(',')
+        if (sameSet && !sameOrder) {
+          const propagate = confirm(
+            `Apply this exercise order to "${template.name}" too? Choose Cancel to keep it just for this workout.`,
+          )
+          if (propagate) {
+            const reordered: TemplateExerciseInput[] = workoutOrder.map((key) => {
+              const te = template.exercises.find((t) => refKey(t) === key)!
+              return {
+                exercise_id: te.exercise_id,
+                custom_exercise_id: te.custom_exercise_id,
+                target_sets: te.target_sets,
+                warmup_sets: te.warmup_sets,
+                drop_sets: te.drop_sets,
+                superset_group: te.superset_group,
+              }
+            })
+            await updateTemplate.mutateAsync({ exercises: reordered })
+          }
         }
       }
-    }
 
-    await updateWorkout.mutateAsync({ finish: true })
-    timer.clear()
-    navigate(`/history/${workout.id}`)
+      await updateWorkout.mutateAsync({ finish: true })
+      timer.clear()
+      navigate(`/history/${workout.id}`)
+    } catch (err) {
+      // The workout is still active -- don't navigate away, and say so, rather than leaving it
+      // looking finished when the save never reached the server.
+      setFinishError(err instanceof Error ? err.message : 'Could not finish the workout.')
+    }
   }
 
-  const handleDiscard = async () => {
-    if (!confirm('Discard this workout? This cannot be undone.')) return
-    await deleteWorkout.mutateAsync(workout.id)
+  const handleDiscard = () => {
+    deleteWithUndo({
+      message: 'Workout discarded',
+      hideKey: `workout:${workout.id}`,
+      commit: () => deleteWorkout.mutateAsync(workout.id),
+    })
     timer.clear()
     navigate('/')
   }
@@ -112,7 +146,16 @@ export function ActiveWorkoutPage() {
         <div className="min-w-0 flex-1">
           <NameEditor workout={workout} onSave={(name) => updateWorkout.mutate({ name })} />
           <p key={elapsedTick} className="text-sm text-muted">
-            {formatElapsed(workout.started_at)} elapsed
+            {formatElapsed(workout.started_at)} elapsed ·{' '}
+            <a
+              href="/docs/features/workout_logging.html#the-active-workout-screen"
+              target="_blank"
+              rel="noreferrer"
+              title="Open the user manual's active workout section"
+              className="font-medium hover:text-accent"
+            >
+              Help
+            </a>
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -134,22 +177,51 @@ export function ActiveWorkoutPage() {
         </div>
       </div>
 
+      {finishError && (
+        <p className="text-sm text-danger">
+          {finishError} The workout is still in progress -- try Finish again.
+        </p>
+      )}
+
+      <WorkoutMusclesHeader workoutId={workout.id} muscles={workout.muscles} />
+
       {workout.exercises.length === 0 && (
         <EmptyState title="No exercises yet" hint="Add your first exercise to start logging sets." />
       )}
 
-      <div className="space-y-3">
-        {workout.exercises.map((we) => (
-          <div key={we.id} ref={dragReorder.getItemRef(we.id)}>
-            <ExerciseBlock
-              workout={workout}
-              workoutExercise={we}
-              handleProps={dragReorder.getHandleProps(we.id)}
-              isDragging={dragReorder.isBeingDragged(we.id)}
-            />
-          </div>
-        ))}
-      </div>
+      <ExerciseList
+        items={workout.exercises}
+        dragReorder={dragReorder}
+        renderCard={(we, i) => {
+          if (isHidden(`workout-exercise:${we.id}`)) return null
+          const next = workout.exercises[i + 1]
+          const linkedBelow = isPaired(we, next)
+          return (
+            <div className="flex items-stretch gap-2">
+              <SupersetBar linkedAbove={isPaired(workout.exercises[i - 1], we)} linkedBelow={linkedBelow} />
+              <div className="min-w-0 flex-1">
+                <ExerciseBlock
+                  workout={workout}
+                  workoutExercise={we}
+                  handleProps={dragReorder.getHandleProps(we.id)}
+                  isDragging={dragReorder.isBeingDragged(we.id)}
+                  supersetToggle={
+                    next
+                      ? {
+                          linkedBelow,
+                          onToggle: () =>
+                            linkedBelow
+                              ? updateWorkoutExercise.mutate({ workoutExerciseId: we.id, superset_group: null })
+                              : linkExercises.mutate({ firstId: we.id, secondId: next.id }),
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            </div>
+          )
+        }}
+      />
 
       <Button
         variant="secondary"
@@ -164,25 +236,12 @@ export function ActiveWorkoutPage() {
         <ExercisePicker
           onClose={() => setPickerOpen(false)}
           onSelect={async (exercise: ExerciseTemplate) => {
-            await addExercise.mutateAsync(exercise.id)
+            await addExercise.mutateAsync(refForExercise(exercise))
             setPickerOpen(false)
           }}
         />
       )}
     </div>
-  )
-}
-
-function NameEditor({ workout, onSave }: { workout: Workout; onSave: (name: string) => void }) {
-  const [value, setValue] = useState(workout.name)
-  useEffect(() => setValue(workout.name), [workout.name])
-  return (
-    <input
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => value.trim() && value !== workout.name && onSave(value.trim())}
-      className="-ml-1 w-full min-w-0 rounded px-1 text-xl font-bold focus:bg-border/30 focus:outline-none"
-    />
   )
 }
 
@@ -207,11 +266,14 @@ function ExerciseBlock({
   workoutExercise,
   handleProps,
   isDragging,
+  supersetToggle,
 }: {
   workout: Workout
   workoutExercise: WorkoutExercise
   handleProps: Record<string, unknown>
   isDragging: boolean
+  /** Omitted for the last exercise in the list -- there's nothing below it to pair with. */
+  supersetToggle?: { linkedBelow: boolean; onToggle: () => void }
 }) {
   const settings = useAppSettings()
   const timer = useGlobalRestTimer()
@@ -219,18 +281,21 @@ function ExerciseBlock({
   const updateSet = useUpdateSet(workout.id)
   const deleteSet = useDeleteSet(workout.id)
   const removeExercise = useRemoveWorkoutExercise(workout.id)
-  const { data: history } = useExerciseHistory(workoutExercise.exercise_id)
+  const { deleteWithUndo, isHidden } = useUndo()
+  const [editingNote, setEditingNote] = useState<NoteKind | null>(null)
+  const { data: history } = useExerciseHistory(workoutExercise)
 
   const previousSets: WorkoutSet[] = history?.items.find((item) => item.workout_id !== workout.id)?.sets ?? []
+  const previousBaseline = progressionBaseline(previousSets)
   const trackingType = workoutExercise.tracking_type ?? 'weight_reps'
 
   const restGhost = (index: number) =>
     restGhostSeconds(workoutExercise.sets, index, previousSets, settings.default_rest_seconds)
 
-  const handleToggleComplete = (set: WorkoutSet, index: number) => {
+  const handleToggleComplete = (set: WorkoutSet, index: number, pending?: Partial<WorkoutSet>) => {
     const nextCompleted = !set.completed
     if (!nextCompleted) {
-      updateSet.mutate({ setId: set.id, data: { completed: false } })
+      updateSet.mutate({ setId: set.id, data: { ...pending, completed: false } })
       return
     }
     // The rest is the set's own value if it has one, else its ghost value.
@@ -239,7 +304,10 @@ function ExerciseBlock({
     const restSeconds = set.rest_seconds ?? restGhost(index)
     updateSet.mutate({
       setId: set.id,
-      data: set.rest_seconds === null ? { completed: true, rest_seconds: restSeconds } : { completed: true },
+      // `pending` is whatever was still typed but not yet blurred in the weight/reps/duration
+      // fields -- folded into this same request so completing doesn't race a separate commit
+      // for it (see SetRow's uncommittedPatch).
+      data: { ...pending, ...(set.rest_seconds === null ? { rest_seconds: restSeconds } : {}), completed: true },
     })
     timer.start(restSeconds, set.id)
   }
@@ -255,48 +323,95 @@ function ExerciseBlock({
   }
 
   return (
-    <Card className={isDragging ? 'scale-[1.02] shadow-lg' : ''}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1">
-          <DragHandle handleProps={handleProps} isDragging={isDragging} />
-          <h3 className="min-w-0 truncate font-semibold">{workoutExercise.exercise_name}</h3>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <ViewExerciseButton exerciseId={workoutExercise.exercise_id} />
+    <ExerciseCard
+      dragging={isDragging}
+      title={workoutExercise.exercise_name}
+      leading={<DragHandle handleProps={handleProps} isDragging={isDragging} />}
+      actions={
+        <>
+          <ViewExerciseButton
+            exerciseId={workoutExercise.exercise_id}
+            customExerciseId={workoutExercise.custom_exercise_id}
+          />
+          <ExerciseMenu
+            label="Exercise actions"
+            items={[
+              ...noteMenuItems(setEditingNote),
+              ...(supersetToggle
+                ? [
+                    {
+                      label: supersetToggle.linkedBelow ? 'Remove from superset' : 'Superset with next',
+                      title: supersetToggle.linkedBelow
+                        ? 'Unlink this exercise and the next one'
+                        : 'Pair this exercise with the next one, forcing the same set count',
+                      onClick: supersetToggle.onToggle,
+                    },
+                  ]
+                : []),
+            ]}
+          />
           <button
-            onClick={() => removeExercise.mutate(workoutExercise.id)}
+            onClick={() =>
+              deleteWithUndo({
+                message: `Removed ${workoutExercise.exercise_name ?? 'exercise'}`,
+                hideKey: `workout-exercise:${workoutExercise.id}`,
+                commit: () => removeExercise.mutateAsync(workoutExercise.id),
+              })
+            }
             title="Remove this exercise from the workout"
             className="px-1 text-xs text-muted hover:text-danger"
           >
             Remove
           </button>
-        </div>
-      </div>
-
+        </>
+      }
+      notes={
+        <ExerciseNotesPanel
+          workoutId={workout.id}
+          workoutExercise={workoutExercise}
+          editing={editingNote}
+          onDone={() => setEditingNote(null)}
+        />
+      }
+      footer={
+        <button
+          onClick={() => addSet.mutate(workoutExercise.id)}
+          title={
+            workoutExercise.superset_group !== null
+              ? 'Add another set, copied from the last one -- also adds one to the paired exercise'
+              : 'Add another set, copied from the last one'
+          }
+          className="mt-2 w-full rounded-lg border border-dashed border-border py-2 text-sm font-medium text-muted hover:bg-border/20"
+        >
+          + Add set
+        </button>
+      }
+    >
       <div className="space-y-0.5">
-        {workoutExercise.sets.map((set, i) => (
-          <SetRow
-            key={set.id}
-            set={set}
-            index={i}
-            trackingType={trackingType}
-            weightUnit={settings.weight_unit}
-            previousSet={previousSets[i]}
-            restGhostSeconds={restGhost(i)}
-            onChange={(patch) => handleChange(set, i, patch)}
-            onToggleComplete={() => handleToggleComplete(set, i)}
-            onDelete={() => deleteSet.mutate(set.id)}
-          />
-        ))}
+        {workoutExercise.sets.map((set, i) =>
+          isHidden(`set:${set.id}`) ? null : (
+            <SetRow
+              key={set.id}
+              set={set}
+              index={i}
+              trackingType={trackingType}
+              weightUnit={settings.weight_unit}
+              previousSet={previousSets[i]}
+              progressionBaseline={previousBaseline}
+              restGhostSeconds={restGhost(i)}
+              onChange={(patch) => handleChange(set, i, patch)}
+              onToggleComplete={(pending) => handleToggleComplete(set, i, pending)}
+              onDelete={() =>
+                deleteWithUndo({
+                  message: 'Set deleted',
+                  hideKey: `set:${set.id}`,
+                  commit: () => deleteSet.mutateAsync(set.id),
+                })
+              }
+            />
+          ),
+        )}
       </div>
-
-      <button
-        onClick={() => addSet.mutate(workoutExercise.id)}
-        title="Add another set, copied from the last one"
-        className="mt-2 w-full rounded-lg border border-dashed border-border py-2 text-sm font-medium text-muted hover:bg-border/20"
-      >
-        + Add set
-      </button>
-    </Card>
+    </ExerciseCard>
   )
 }

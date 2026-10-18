@@ -6,7 +6,7 @@ const TABS = [
   { to: '/templates', label: 'Templates', icon: TemplateIcon, title: 'Templates: manage and start from routines' },
   { to: '/history', label: 'History', icon: HistoryIcon, title: 'History: past workouts' },
   { to: '/exercises', label: 'Exercises', icon: DumbbellIcon, title: 'Exercises: browse the exercise library' },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon, title: 'Settings: units, rest timer, body weight' },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, title: 'Settings: units, rest timer, progressive overload' },
 ]
 
 export function NavBar() {

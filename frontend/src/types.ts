@@ -1,6 +1,8 @@
+import type { Muscle } from '@abdofallah/musclemap-js'
+
 export type WeightUnit = 'lbs' | 'kg'
 export type DistanceUnit = 'mi' | 'km'
-export type Theme = 'system' | 'light' | 'dark'
+export type Theme = 'system' | 'light' | 'dark' | 'green' | 'pink'
 export type Equipment =
   | 'barbell'
   | 'dumbbell'
@@ -15,6 +17,8 @@ export interface MuscleGroup {
   id: number
   name: string
   display_order: number
+  /** Small diagram standing in for the group, or null when there isn't one. */
+  image_url: string | null
 }
 
 export interface LastPerformed {
@@ -25,6 +29,17 @@ export interface LastPerformed {
 /** A muscle as its source dataset names it, plus a highlighted-body diagram
  * when RepDB happens to have one under the same name. */
 export interface MuscleSwatch {
+  /** Stable key (e.g. "pectoralis_major") used to filter the exercise library. */
+  slug: string
+  name: string
+  image_url: string | null
+  /** The body-diagram regions this muscle lights up (from the backend mapping). */
+  regions: Muscle[]
+}
+
+/** A specific muscle that some exercise in a muscle group works. */
+export interface MuscleOption {
+  slug: string
   name: string
   image_url: string | null
 }
@@ -77,20 +92,90 @@ export interface WorkoutSet {
   duration_seconds: number | null
   distance_meters: number | null
   rest_seconds: number | null
+  /** Expected values for a set started from a template: ghost text until the set is completed. */
+  planned_weight: number | null
+  planned_weight_unit: WeightUnit | null
+  planned_reps: number | null
+  planned_duration_seconds: number | null
+  /** True when the planned values above are actually different from what progressive overload
+   * compared them against (a real increase), not just progression having run. */
+  planned_is_progressed: boolean
+  /** True whenever progressive overload actually ran for this set, whether or not it changed
+   * anything -- implied by planned_is_progressed, but can be true while that's false (ran, but
+   * landed on the same value as last time). A plain copy (warm-up/drop, no history, or
+   * progression off) is always false here. */
+  planned_progression_active: boolean
   is_warmup: boolean
   is_dropset: boolean
   rpe: number | null
   completed: boolean
 }
 
+/** What plan_sets would produce for an exercise right now, given a hypothetical set plan --
+ * see the /exercise-templates/:id/plan-preview endpoint. Same shape as a planned WorkoutSet,
+ * minus the id/position wrapper, since nothing is actually created. */
+export interface PlanPreviewSet {
+  is_warmup: boolean
+  is_dropset: boolean
+  weight: number | null
+  weight_unit: WeightUnit | null
+  reps: number | null
+  duration_seconds: number | null
+  is_progressed: boolean
+  is_progression_active: boolean
+}
+
 export interface WorkoutExercise {
   id: number
-  exercise_id: number
+  /** Exactly one of exercise_id (catalog) / custom_exercise_id (this user's own) is set -- the
+   * two live in separate databases now, see docs/data_model.rst "Database split". */
+  exercise_id: number | null
+  custom_exercise_id: number | null
   exercise_name: string | null
   tracking_type: TrackingType | null
   position: number
   notes: string | null
+  /** Shared with exactly one other (adjacent) exercise when the two are a superset. */
+  superset_group: number | null
   sets: WorkoutSet[]
+}
+
+/** The muscles a workout or template works, rolled up from its exercises. Slugs
+ * are canonical; groups are in the app's group order. */
+/** Strength status of one muscle in one workout (see docs/source/features/strength_score.rst).
+ * "scored": ratio is this workout's value against the muscle's moving average (1.0 = no change).
+ * "no_baseline": worked, but not enough earlier workouts to compare with yet.
+ * "pending": planned or skipped, with no completed set yet. */
+export type StrengthStatus = 'scored' | 'no_baseline' | 'pending'
+
+export interface MuscleStrength {
+  status: StrengthStatus
+  regions: Muscle[]
+  ratio: number | null
+  /** How much logged work the muscle's change rests on (higher is more evidence). */
+  evidence?: number
+}
+
+export interface WorkoutStrength {
+  /** Geometric mean of the scored muscles' ratios; null until some muscle has enough history. */
+  score: number | null
+  /** Keyed by canonical muscle slug. Muscles not listed have no data. */
+  muscles: Record<string, MuscleStrength>
+}
+
+/** One completed workout's strength score. `score` is null during the warm-up period. */
+export interface StrengthPoint extends WorkoutStrength {
+  workout_id: number
+  date: string
+  template_id: number | null
+}
+
+export interface MuscleSummary {
+  primary: string[]
+  secondary: string[]
+  groups: string[]
+  /** Every region the workout's or template's muscles light up. */
+  regions: Muscle[]
 }
 
 export interface Workout {
@@ -104,6 +189,7 @@ export interface Workout {
   body_weight: number | null
   is_active: boolean
   exercises: WorkoutExercise[]
+  muscles: MuscleSummary
 }
 
 export interface WorkoutSummary extends Omit<Workout, 'exercises'> {
@@ -112,12 +198,20 @@ export interface WorkoutSummary extends Omit<Workout, 'exercises'> {
 
 export interface TemplateExercise {
   id: number
-  exercise_id: number
+  /** Exactly one of exercise_id (catalog) / custom_exercise_id (this user's own) is set -- see
+   * WorkoutExercise. */
+  exercise_id: number | null
+  custom_exercise_id: number | null
   exercise_name: string | null
   position: number
+  /** Working sets a workout starts with. */
   target_sets: number | null
+  warmup_sets: number
+  drop_sets: number
   target_reps: string | null
   target_weight: number | null
+  /** Shared with exactly one other (adjacent) exercise when the two are a superset. */
+  superset_group: number | null
 }
 
 export interface WorkoutTemplate {
@@ -127,14 +221,23 @@ export interface WorkoutTemplate {
   display_order: number
   created_at: string
   updated_at: string
+  muscles: MuscleSummary
   exercises: TemplateExercise[]
 }
+
+export type ProgressionMethod = 'double' | 'linear' | 'off'
+export type Experience = 'novice' | 'intermediate'
 
 export interface UserSettings {
   weight_unit: WeightUnit
   distance_unit: DistanceUnit
   default_rest_seconds: number
   theme: Theme
+  progression_method: ProgressionMethod
+  experience: Experience
+  load_step_lb: number
+  load_step_kg: number
+  default_rep_range: string
 }
 
 export interface BodyweightEntry {
@@ -165,6 +268,7 @@ export interface ExerciseStats {
 
 export interface RecentPr {
   exercise_id: number
+  is_custom: boolean
   exercise_name: string
   metric: string
   value: number

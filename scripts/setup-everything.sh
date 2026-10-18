@@ -16,7 +16,10 @@
 #   6. seeds/refreshes the exercise catalog (safe to re-run; never touches
 #      anything you've edited)
 #   7. installs frontend dependencies from the lockfile and builds the web app
-#   8. stops any previously started production server, then starts a new one
+#   8. builds the Sphinx documentation (scripts/build-docs.sh), served at /docs
+#      by the app itself; a failure here only warns, since the app runs fine
+#      without it
+#   9. stops any previously started production server, then starts a new one
 #
 # Options:
 #   --fresh              first delete backend/.venv and frontend/node_modules
@@ -31,9 +34,15 @@
 # Configuration (each setting can come from a flag, an environment variable, or
 # a config file; a flag beats the environment, which beats the file):
 #   --port N               PORT                 port to serve on (default 8000)
-#   --db PATH              (sets DATABASE_URL)  SQLite database file
+#   --db PATH              (sets DATABASE_URL)  this user's own data
 #                                               (default: <repo>/data/workout.db)
 #   --database-url URL     DATABASE_URL         full SQLAlchemy URL instead of --db
+#   --catalog-db PATH      (sets                the shared exercise catalog -- a
+#                           CATALOG_DATABASE_URL) separate database; see
+#                                               docs/data_model.rst "Database split"
+#                                               (default: <repo>/data/catalog.db)
+#   --catalog-database-url URL
+#                           CATALOG_DATABASE_URL full SQLAlchemy URL instead of --catalog-db
 #   --config FILE          SETUP_CONFIG         KEY=VALUE file with any of the above
 #                                               (default: <repo>/setup.env if present;
 #                                               see scripts/setup.env.example)
@@ -211,7 +220,7 @@ ensure_venv() {
 }
 
 # ------------------------------------------------------------------- config
-CONFIG_KEYS="PORT DATABASE_URL NODE_VERSION"
+CONFIG_KEYS="PORT DATABASE_URL CATALOG_DATABASE_URL NODE_VERSION"
 
 # Read KEY=VALUE lines (no shell evaluation) for the keys above, without
 # overriding anything already set by a flag or the environment.
@@ -238,15 +247,18 @@ apply_config() {
   export PORT="${PORT:-8000}"
   NODE_VERSION="${NODE_VERSION:-22.14.0}"
   case "$PORT" in ''|*[!0-9]*) die "PORT must be a number (got '$PORT')." ;; esac
-  # DATABASE_URL is read by the backend itself (backend/app/config.py); only
-  # export it when set, so an unset value keeps the default data/workout.db.
+  # DATABASE_URL/CATALOG_DATABASE_URL are read by the backend itself
+  # (backend/app/config.py); only export them when set, so an unset value
+  # keeps the defaults (data/workout.db, data/catalog.db).
   if [ -n "${DATABASE_URL:-}" ]; then export DATABASE_URL; fi
+  if [ -n "${CATALOG_DATABASE_URL:-}" ]; then export CATALOG_DATABASE_URL; fi
 }
 
 show_config() {
-  local db; db="$(sqlite_path)"
+  local db cdb; db="$(sqlite_path)"; cdb="$(catalog_sqlite_path)"
   info "Port:      $PORT"
-  info "Database:  ${db:-$DATABASE_URL}"
+  info "Database:  ${db:-$DATABASE_URL} (user data)"
+  info "Catalog:   ${cdb:-$CATALOG_DATABASE_URL} (shared exercise catalog)"
 }
 
 # -------------------------------------------------------------- 5. database
@@ -255,6 +267,15 @@ sqlite_path() {  # prints the sqlite file in use, or nothing for a non-sqlite DA
     "") printf '%s\n' "$DATA_DIR/workout.db" ;;
     sqlite:////*) printf '%s\n' "${DATABASE_URL#sqlite:///}" ;;
     sqlite:///*) printf '%s\n' "$BACKEND/instance/${DATABASE_URL#sqlite:///}" ;;  # Flask-SQLAlchemy resolves relative paths there
+    *) ;;
+  esac
+}
+
+catalog_sqlite_path() {  # same as sqlite_path(), for the shared-catalog database
+  case "${CATALOG_DATABASE_URL:-}" in
+    "") printf '%s\n' "$DATA_DIR/catalog.db" ;;
+    sqlite:////*) printf '%s\n' "${CATALOG_DATABASE_URL#sqlite:///}" ;;
+    sqlite:///*) printf '%s\n' "$BACKEND/instance/${CATALOG_DATABASE_URL#sqlite:///}" ;;
     *) ;;
   esac
 }
@@ -284,6 +305,21 @@ EOF
     die "$db still has the old 'exercises' table with data. Upgrading it automatically would lose history; copy over an up-to-date data/workout.db from your main machine instead."
   fi
 
+  # The catalog/user database split (see docs/data_model.rst "Database split") moved
+  # exercise_templates etc. out of this database into a separate catalog one. A database from
+  # before that split still has exercise_templates with *dataset* rows in it (is_custom = 0);
+  # upgrading it automatically would need scripts/split_catalog_database.py run first, which
+  # this script won't do unattended (it moves data, not just schema).
+  if [ -n "$db" ] && [ -s "$db" ] && "$PY" - "$db" <<'EOF'
+import sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+has = c.execute("select 1 from sqlite_master where type='table' and name='exercise_templates'").fetchone()
+sys.exit(0 if has and c.execute("select count(*) from exercise_templates where is_custom = 0").fetchone()[0] > 0 else 1)
+EOF
+  then
+    die "$db predates the catalog/user database split and still has dataset exercises in it. Run (from $BACKEND): \`flask db upgrade l0d3a8f5c2e9\`, then \`python scripts/split_catalog_database.py $db $(catalog_sqlite_path) --apply\`, then \`flask db upgrade\` again -- see docs/data_model.rst \"Database split\"."
+  fi
+
   if [ "$current" = "$head" ] && [ -n "$head" ]; then
     ok "Database schema already current ($head)"
     return
@@ -304,7 +340,9 @@ EOF
 
 seed_catalog() {
   step "Exercise catalog"
-  local out
+  local out cdb
+  cdb="$(catalog_sqlite_path)"
+  [ -z "$cdb" ] || mkdir -p "$(dirname "$cdb")"
   out="$(mktemp)"
   if ! "$PY" scripts/seed_exercise_templates.py >"$out" 2>&1; then
     cat "$out" >&2; rm -f "$out"; die "Seeding the exercise catalog failed."
@@ -328,6 +366,16 @@ build_frontend() {
   NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=2048}" npm run build
   [ -f dist/index.html ] || die "Frontend build didn't produce dist/index.html."
   ok "Frontend built ($(du -sh dist | cut -f1))"
+}
+
+# ------------------------------------------------------------------ 7.5 docs
+build_docs() {
+  step "Documentation"
+  if "$ROOT/scripts/build-docs.sh"; then
+    ok "Docs built, served at /docs"
+  else
+    warn "Docs build failed; the app runs fine without it (in-app Help links will 404 until it's fixed)."
+  fi
 }
 
 # --------------------------------------------------------------- 7. server
@@ -400,7 +448,7 @@ start_server() {
 }
 
 # --------------------------------------------------------------------- main
-main() {
+parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --fresh) FRESH=1 ;;
@@ -411,12 +459,18 @@ main() {
       --port) [ $# -ge 2 ] || die "--port needs a value"; export PORT="$2"; shift ;;
       --db) [ $# -ge 2 ] || die "--db needs a path"; export DATABASE_URL="sqlite:///$(realpath -m -- "$2")"; shift ;;
       --database-url) [ $# -ge 2 ] || die "--database-url needs a value"; export DATABASE_URL="$2"; shift ;;
+      --catalog-db) [ $# -ge 2 ] || die "--catalog-db needs a path"; export CATALOG_DATABASE_URL="sqlite:///$(realpath -m -- "$2")"; shift ;;
+      --catalog-database-url) [ $# -ge 2 ] || die "--catalog-database-url needs a value"; export CATALOG_DATABASE_URL="$2"; shift ;;
       --config) [ $# -ge 2 ] || die "--config needs a path"; CONFIG_FILE="$(realpath -m -- "$2")"; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "Unknown option: $1 (see --help)" ;;
     esac
     shift
   done
+}
+
+main() {
+  parse_args "$@"
 
   trap 'printf "%s✗ Setup stopped at line %s; see the output above. Fix it and re-run -- this script is safe to repeat.%s\n" "$RED" "$LINENO" "$OFF" >&2' ERR
 
@@ -430,6 +484,7 @@ main() {
   migrate_database
   seed_catalog
   build_frontend
+  build_docs
   if [ "$START" -eq 1 ]; then
     start_server
   else
@@ -438,5 +493,9 @@ main() {
   fi
 }
 
-main "$@"
-exit $?
+# Only run when executed directly; scripts/setup-dev.sh sources this file to
+# reuse the config functions (parse_args, apply_config).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+  exit $?
+fi

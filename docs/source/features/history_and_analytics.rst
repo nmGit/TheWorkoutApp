@@ -7,6 +7,16 @@ bookkeeping beyond normal set logging.
 Workout history
 -----------------
 
+.. image:: /_static/screenshots/history.png
+   :alt: The workout history list, with a heatmap at the top
+   :width: 360px
+   :align: center
+
+.. image:: /_static/screenshots/workout_detail.png
+   :alt: A completed workout's read-only detail view
+   :width: 360px
+   :align: center
+
 ``/history`` — reverse-chronological list of completed workouts (one row:
 date, name/template subtitle, exercise count). Total volume for a session
 is shown on the detail view rather than in the list row, since it needs
@@ -43,6 +53,11 @@ correctly.
 
 Dashboard
 ---------
+
+.. image:: /_static/screenshots/home.png
+   :alt: The home dashboard
+   :width: 360px
+   :align: center
 
 ``/`` (home) surfaces, above the fold: the current active workout if one
 exists (with a one-tap "Continue" back into it — see

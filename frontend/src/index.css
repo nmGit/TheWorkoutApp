@@ -38,6 +38,32 @@
   --color-success: #4ade80;
 }
 
+/* Pink: a dark base with pink accents. */
+:root[data-theme='pink'] {
+  --color-bg: #1a0f14;
+  --color-surface: #261720;
+  --color-fg: #fbe9f0;
+  --color-muted: #b9949f;
+  --color-border: #3d2632;
+  --color-accent: #ec4899;
+  --color-accent-fg: #1a0610;
+  --color-danger: #f87171;
+  --color-success: #4ade80;
+}
+
+/* Green: a dark base with green accents. */
+:root[data-theme='green'] {
+  --color-bg: #0e1a12;
+  --color-surface: #15261b;
+  --color-fg: #e6f5ea;
+  --color-muted: #8fae98;
+  --color-border: #27402e;
+  --color-accent: #22c55e;
+  --color-accent-fg: #04140a;
+  --color-danger: #f87171;
+  --color-success: #4ade80;
+}
+
 @theme {
   --color-bg: var(--color-bg);
   --color-surface: var(--color-surface);

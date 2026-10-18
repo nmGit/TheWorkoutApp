@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Workout, WorkoutExercise, WorkoutSet, WorkoutSummary } from '../types'
+import type { ExerciseRef } from '../lib/exerciseRef'
+import type { StrengthPoint, Workout, WorkoutExercise, WorkoutSet, WorkoutStrength, WorkoutSummary } from '../types'
 
 export const workoutKeys = {
   all: ['workouts'] as const,
   list: (params: Record<string, string | number | undefined>) => ['workouts', 'list', params] as const,
   active: ['workouts', 'active'] as const,
   detail: (id: number) => ['workouts', 'detail', id] as const,
+  strength: (id: number) => ['workouts', 'strength', id] as const,
 }
 
 export function useActiveWorkout() {
@@ -40,10 +42,32 @@ export function useWorkout(id: number | undefined) {
   })
 }
 
-function invalidateWorkout(qc: ReturnType<typeof useQueryClient>, id?: number) {
-  qc.invalidateQueries({ queryKey: workoutKeys.active })
-  qc.invalidateQueries({ queryKey: ['workouts', 'list'] })
-  if (id !== undefined) qc.invalidateQueries({ queryKey: workoutKeys.detail(id) })
+export function invalidateWorkout(qc: ReturnType<typeof useQueryClient>, id?: number) {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: workoutKeys.active }),
+    qc.invalidateQueries({ queryKey: ['workouts', 'list'] }),
+    id !== undefined ? qc.invalidateQueries({ queryKey: workoutKeys.detail(id) }) : undefined,
+    // Editing a workout also changes the baselines of every later workout, so every
+    // strength query is stale, not just this one's.
+    qc.invalidateQueries({ queryKey: ['workouts', 'strength'] }),
+    qc.invalidateQueries({ queryKey: ['strength-history'] }),
+    qc.invalidateQueries({ queryKey: ['muscle-recency'] }),
+  ])
+}
+
+export function useStrengthHistory() {
+  return useQuery({
+    queryKey: ['strength-history'],
+    queryFn: () => api.get<StrengthPoint[]>('/strength/history'),
+  })
+}
+
+export function useWorkoutStrength(id: number | undefined) {
+  return useQuery({
+    queryKey: workoutKeys.strength(id ?? -1),
+    queryFn: () => api.get<WorkoutStrength>(`/workouts/${id}/strength`),
+    enabled: id !== undefined,
+  })
 }
 
 export function useStartWorkout() {
@@ -72,11 +96,39 @@ export function useDeleteWorkout() {
   })
 }
 
+export function useUpdateWorkoutExercise(workoutId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      workoutExerciseId,
+      notes,
+      superset_group,
+    }: {
+      workoutExerciseId: number
+      notes?: string
+      /** Only `null` (un-pair) is accepted here -- pairing goes through useLinkWorkoutExercises,
+       * since it has to change both exercises in one request. */
+      superset_group?: null
+    }) => api.patch<Workout>(`/workouts/${workoutId}/exercises/${workoutExerciseId}`, { notes, superset_group }),
+    onSuccess: () => invalidateWorkout(qc, workoutId),
+  })
+}
+
+/** Pairs two adjacent exercises into a superset -- see services/supersets.py for what that
+ * forces (same set count) and how an existing pairing on either side is broken first. */
+export function useLinkWorkoutExercises(workoutId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ firstId, secondId }: { firstId: number; secondId: number }) =>
+      api.post<Workout>(`/workouts/${workoutId}/exercises/link`, { first_id: firstId, second_id: secondId }),
+    onSuccess: () => invalidateWorkout(qc, workoutId),
+  })
+}
+
 export function useAddWorkoutExercise(workoutId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (exerciseId: number) =>
-      api.post<Workout>(`/workouts/${workoutId}/exercises`, { exercise_id: exerciseId }),
+    mutationFn: (ref: ExerciseRef) => api.post<Workout>(`/workouts/${workoutId}/exercises`, ref),
     onSuccess: () => invalidateWorkout(qc, workoutId),
   })
 }

@@ -23,16 +23,20 @@ export function useTemplate(id: number | undefined) {
 }
 
 export interface TemplateExerciseInput {
-  exercise_id: number
+  /** Exactly one of these two -- see WorkoutExercise in types.ts. */
+  exercise_id?: number | null
+  custom_exercise_id?: number | null
   target_sets?: number | null
+  warmup_sets?: number
+  drop_sets?: number
   target_reps?: string | null
-  target_weight?: number | null
+  superset_group?: number | null
 }
 
 export function useCreateTemplate() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { name: string; notes?: string; exercises: TemplateExerciseInput[] }) =>
+    mutationFn: (data: { name: string; notes?: string | null; exercises: TemplateExerciseInput[] }) =>
       api.post<WorkoutTemplate>('/templates', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: templateKeys.all }),
   })
@@ -41,7 +45,7 @@ export function useCreateTemplate() {
 export function useUpdateTemplate(id: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { name?: string; notes?: string; exercises?: TemplateExerciseInput[] }) =>
+    mutationFn: (data: { name?: string; notes?: string | null; exercises?: TemplateExerciseInput[] }) =>
       api.patch<WorkoutTemplate>(`/templates/${id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: templateKeys.all })

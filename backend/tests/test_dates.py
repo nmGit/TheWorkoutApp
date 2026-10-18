@@ -2,6 +2,26 @@ from datetime import date, datetime, timezone
 
 from app.services.dates import local_date, local_midnight_utc, to_utc
 
+import os
+import time
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _central_time(monkeypatch):
+    """These tests assume US Central time, so pin it here instead of trusting the machine's
+    zone. The previous zone is restored afterwards."""
+    if not hasattr(time, "tzset"):
+        pytest.skip("needs POSIX time zone support")
+    monkeypatch.setenv("TZ", "America/Chicago")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+
 
 def test_to_utc_converts_naive_local_wall_clock():
     # America/Chicago in summer is UTC-5 (CDT). 8pm local -> 1am UTC next day.

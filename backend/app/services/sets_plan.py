@@ -1,0 +1,212 @@
+"""The sets a workout starts with, from a template exercise.
+
+The template says how many sets of each kind (warm-up, working, drop) to start with. Values come from
+the last completed session of that exercise:
+
+- Warm-up and drop sets copy the same kind of set from that session, in the same position.
+- Working sets follow the progression method in Settings, applied to that session's top working sets.
+  With progression off, they copy the last session's working sets instead.
+
+Warm-ups are never used to progress a load: only working sets count.
+"""
+
+from dataclasses import dataclass
+
+from app.models.exercise_reference import exercise_ref_filter
+from app.models.workout import Workout, WorkoutExercise, WorkoutSet
+from app.models.settings import UserSettings
+from app.services.units import convert_weight
+
+DEFAULT_REP_RANGE = (8, 12)
+TOP_TOLERANCE = 0.005  # sets within 0.5% of the session's top weight count as its top sets
+
+
+@dataclass
+class SetPlanSpec:
+    """What plan_sets needs to know about an exercise slot: how many sets of each kind to start
+    with, and an optional rep-range override. A ``TemplateExercise`` already has all of these
+    attributes, so it can be passed to plan_sets directly; a caller with no template (a generated
+    workout) builds one of these instead. Exactly one of exercise_id/custom_exercise_id, same as
+    ExerciseReferenceMixin (TemplateExercise/WorkoutExercise) -- see that for why there are two."""
+
+    exercise_id: int | None = None
+    custom_exercise_id: int | None = None
+    target_reps: str | None = None
+    warmup_sets: int = 0
+    target_sets: int = 1
+    drop_sets: int = 0
+
+    @property
+    def exercise_ref(self) -> tuple[str, int]:
+        if self.exercise_id is not None:
+            return ("catalog", self.exercise_id)
+        return ("custom", self.custom_exercise_id)
+
+    @classmethod
+    def for_exercise(cls, exercise, **kwargs) -> "SetPlanSpec":
+        """Build a spec targeting a specific exercise object (ExerciseTemplate or
+        CustomExerciseTemplate) without the caller having to know which kind it got."""
+        kind, exercise_id = exercise.ref
+        return cls(
+            exercise_id=exercise_id if kind == "catalog" else None,
+            custom_exercise_id=exercise_id if kind == "custom" else None,
+            **kwargs,
+        )
+
+
+def rep_range_or_none(text: str | None) -> tuple[int, int] | None:
+    """'6-8' -> (6, 8); '10' -> (10, 10); None if the text isn't a usable range."""
+    if not text:
+        return None
+    parts = text.replace("–", "-").split("-")
+    try:
+        low = int(parts[0].strip())
+        high = int(parts[-1].strip())
+    except ValueError:
+        return None
+    if low < 1 or high < low or high > 100:
+        return None
+    return low, high
+
+
+def parse_rep_range(text: str | None) -> tuple[int, int]:
+    """Like rep_range_or_none, but anything unusable gives the default range."""
+    return rep_range_or_none(text) or DEFAULT_REP_RANGE
+
+
+def _last_sets_by_kind(exercise_ref: tuple[str, int]) -> dict[str, list]:
+    last = (
+        WorkoutExercise.query.join(Workout, Workout.id == WorkoutExercise.workout_id)
+        .filter(exercise_ref_filter(WorkoutExercise, exercise_ref), Workout.completed_at.isnot(None))
+        .order_by(Workout.started_at.desc(), Workout.id.desc())
+        .first()
+    )
+    kinds: dict[str, list] = {"warmup": [], "working": [], "drop": []}
+    if last is None:
+        return kinds
+    for s in last.sets:  # ordered by position
+        if not s.completed:
+            continue
+        kinds["warmup" if s.is_warmup else "drop" if s.is_dropset else "working"].append(s)
+    return kinds
+
+
+def progress_working(working: list, rep_range: tuple[int, int], settings: UserSettings):
+    """The next working set's (weight, unit, reps, changed) from last session's working sets,
+    or None if there is nothing to progress from (no weights logged) or progression is off.
+
+    `changed` is False when the computed target is identical to the best set already
+    demonstrated last session (the "anchor": the first of last session's top-weight sets) --
+    double progression in particular can compute a target that's just catching a weaker set
+    up to what the best set already did (e.g. last time was 30x8, 30x8, 30x7 -- the next
+    target is 30x8, already true for two of the three sets), which is progress toward
+    consistency but isn't actually asking for more than has already been done. Callers use
+    `changed` to decide whether to mark a set "progressed" (ghost-text color, the "P" badge)
+    rather than marking every set progression merely *ran* for, whether or not it moved
+    anything -- the same single reference point (the first top set) the frontend's ghost-text
+    coloring (progressionBaseline) compares against, so the two always agree.
+    """
+    if settings.progression_method == "off":
+        return None
+    logged = [s for s in working if s.weight is not None and s.reps is not None and float(s.weight) > 0]
+    if not logged:
+        return None
+
+    low, high = rep_range
+    top_kg = max(convert_weight(float(s.weight), s.weight_unit, "kg") for s in logged)
+    top = [
+        s
+        for s in logged
+        if convert_weight(float(s.weight), s.weight_unit, "kg") >= top_kg * (1 - TOP_TOLERANCE)
+    ]
+    unit = settings.weight_unit
+    step = settings.load_step_lb if unit == "lbs" else settings.load_step_kg
+    top_weight = convert_weight(top_kg, "kg", unit)
+    # Reached the top of the range on every top set: time to add load.
+    reached = all(s.reps >= high for s in top)
+    fewest = min(s.reps for s in top)
+    anchor = top[0]
+    anchor_weight = round(convert_weight(float(anchor.weight), anchor.weight_unit, unit), 2)
+
+    if settings.progression_method == "linear":
+        weight = round(top_weight + step, 2) if reached else round(top_weight, 2)
+        reps = high
+    elif reached:
+        weight, reps = round(top_weight + step, 2), low
+    else:
+        # Double progression: first add reps within the range, then add load and start again
+        # at the bottom.
+        weight, reps = round(top_weight, 2), min(high, max(low, fewest + 1))
+
+    changed = weight != anchor_weight or reps != anchor.reps
+    return weight, unit, reps, changed
+
+
+def plan_sets(template_exercise) -> list[dict]:
+    """Field values for each set a workout starts with, in the order: warm-ups, working, drops."""
+    settings = UserSettings.get()
+    previous = _last_sets_by_kind(template_exercise.exercise_ref)
+    # The exercise's own range wins; otherwise the default range from Settings.
+    rep_range = parse_rep_range(template_exercise.target_reps or settings.default_rep_range)
+    progressed = progress_working(previous["working"], rep_range, settings)
+
+    counts = [
+        ("warmup", template_exercise.warmup_sets or 0),
+        ("working", template_exercise.target_sets or 1),
+        ("drop", template_exercise.drop_sets or 0),
+    ]
+    planned = []
+    for kind, count in counts:
+        copies = previous[kind]
+        for i in range(count):
+            if kind == "working" and progressed is not None:
+                weight, unit, reps, changed = progressed
+                planned.append({
+                    "is_warmup": False,
+                    "is_dropset": False,
+                    "weight": weight,
+                    "weight_unit": unit,
+                    "reps": reps,
+                    "duration_seconds": None,
+                    "is_progressed": changed,
+                    "is_progression_active": True,
+                })
+                continue
+            if i < len(copies):
+                source = copies[i]
+            elif kind == "working" and copies:
+                source = copies[-1]
+            else:
+                source = None
+            planned.append({
+                "is_warmup": kind == "warmup",
+                "is_dropset": kind == "drop",
+                "weight": source.weight if source else None,
+                "weight_unit": source.weight_unit if source else None,
+                "reps": source.reps if source else None,
+                "duration_seconds": source.duration_seconds if source else None,
+                "is_progressed": False,
+                "is_progression_active": False,
+            })
+    return planned
+
+
+def make_planned_sets(workout_exercise_id: int, planned: list[dict]) -> list[WorkoutSet]:
+    """Turn plan_sets's output into unsaved WorkoutSet rows, in order. The values go into each
+    set's planned_* fields, not its real ones -- see WorkoutSet.planned_weight."""
+    return [
+        WorkoutSet(
+            workout_exercise_id=workout_exercise_id,
+            position=position,
+            completed=False,
+            is_warmup=p["is_warmup"],
+            is_dropset=p["is_dropset"],
+            planned_weight=p["weight"],
+            planned_weight_unit=p["weight_unit"],
+            planned_reps=p["reps"],
+            planned_duration_seconds=p["duration_seconds"],
+            planned_is_progressed=p["is_progressed"],
+            planned_progression_active=p["is_progression_active"],
+        )
+        for position, p in enumerate(planned)
+    ]

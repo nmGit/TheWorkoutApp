@@ -1,13 +1,18 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useInfiniteExerciseTemplates, useMuscleGroups } from '../api/exerciseTemplates'
+import { MuscleGroupFilters } from '../components/MuscleGroupFilters'
 import { Button, LoadingState, PageTitle } from '../components/ui'
 import type { ExerciseTemplate } from '../types'
 
 export function ExerciseLibraryPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState('')
-  const [muscleGroupId, setMuscleGroupId] = useState<number | undefined>(undefined)
+  // The group and muscle filters live in the URL so other pages can link to a
+  // filtered view (e.g. ?group=2&muscle=pectoralis_major).
+  const muscleGroupId = Number(searchParams.get('group')) || undefined
+  const muscle = searchParams.get('muscle') || undefined
   const { data: groups } = useMuscleGroups()
   const {
     data,
@@ -15,7 +20,14 @@ export function ExerciseLibraryPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteExerciseTemplates({ q: query || undefined, muscleGroupId })
+  } = useInfiniteExerciseTemplates({ q: query || undefined, muscleGroupId, muscle })
+
+  const setFilters = (group: number | undefined, muscleSlug: string | undefined) => {
+    const next = new URLSearchParams()
+    if (group) next.set('group', String(group))
+    if (muscleSlug) next.set('muscle', muscleSlug)
+    setSearchParams(next)
+  }
 
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data])
   const total = data?.pages[0]?.total ?? 0
@@ -32,12 +44,26 @@ export function ExerciseLibraryPage() {
   }, [items, groups])
 
   const handleSelect = (template: ExerciseTemplate) => {
-    navigate(`/exercises/${template.id}`)
+    navigate(template.is_custom ? `/exercises/${template.id}?custom=1` : `/exercises/${template.id}`)
   }
 
   return (
     <div className="space-y-4">
-      <PageTitle>Exercises</PageTitle>
+      <PageTitle
+        action={
+          <a
+            href="/docs/features/exercise_library.html"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the user manual's exercise library section"
+            className="text-xs font-medium text-muted hover:text-accent"
+          >
+            Help
+          </a>
+        }
+      >
+        Exercises
+      </PageTitle>
 
       <input
         value={query}
@@ -45,21 +71,7 @@ export function ExerciseLibraryPage() {
         placeholder="Search exercises…"
         className="h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm"
       />
-      <div className="flex flex-wrap gap-1.5">
-        <FilterChip active={muscleGroupId === undefined} onClick={() => setMuscleGroupId(undefined)} title="Show all muscle groups">
-          All
-        </FilterChip>
-        {groups?.map((g) => (
-          <FilterChip
-            key={g.id}
-            active={muscleGroupId === g.id}
-            onClick={() => setMuscleGroupId(g.id)}
-            title={`Filter to ${g.name}`}
-          >
-            {g.name}
-          </FilterChip>
-        ))}
-      </div>
+      <MuscleGroupFilters muscleGroupId={muscleGroupId} muscle={muscle} onChange={setFilters} />
 
       {isLoading && <LoadingState />}
 
@@ -104,29 +116,5 @@ export function ExerciseLibraryPage() {
         </Button>
       )}
     </div>
-  )
-}
-
-function FilterChip({
-  active,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  title?: string
-  children: ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`rounded-full px-3 py-1 text-xs font-medium ${
-        active ? 'bg-accent text-accent-fg' : 'bg-border/50 text-muted'
-      }`}
-    >
-      {children}
-    </button>
   )
 }

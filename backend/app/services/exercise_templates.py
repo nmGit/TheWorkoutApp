@@ -56,6 +56,31 @@ def body_parts_for_muscle_group(muscle_group_name: str) -> list[str]:
     return [bp for bp, mg in BODY_PART_TO_MUSCLE_GROUP.items() if mg == muscle_group_name]
 
 
+# The muscles each muscle group is made of, as canonical slugs (see
+# canonical_muscle_slug in serializers.py). The exercise library offers these as the
+# sub-filter under a group. It's a fixed list, not whatever happens to be primary in
+# that group's exercises: a glute bridge press filed under chest must not put
+# gluteus under Chest. Groups not listed here (Full Body, Cardio, Mobility) get no
+# sub-filter.
+GROUP_MUSCLES = {
+    "Chest": {"pectoralis_major", "upper_chest", "serratus_anterior"},
+    "Back": {
+        "latissimus_dorsi", "upper_back", "rhomboids", "trapezius",
+        "levator_scapulae", "erector_spinae", "quadratus_lumborum",
+    },
+    "Shoulders": {"anterior_deltoid", "lateral_deltoid", "posterior_deltoid", "rotator_cuff"},
+    "Arms": {
+        "biceps_brachii", "brachialis", "brachioradialis", "triceps_brachii",
+        "forearm_flexors", "forearm_extensors", "wrist_flexors", "wrist_extensors",
+    },
+    "Core": {"rectus_abdominis", "transverse_abdominis", "obliques"},
+    "Legs": {
+        "quadriceps", "hamstrings", "gluteus_maximus", "gluteus_medius", "adductors",
+        "hip_flexors", "gastrocnemius", "soleus", "tibialis",
+    },
+}
+
+
 def equipment_type_for(equipment: str | None) -> str:
     if not equipment:
         return "other"

@@ -6,7 +6,7 @@ import { ExerciseDetailPage } from './pages/ExerciseDetail'
 import { ExerciseLibraryPage } from './pages/ExerciseLibrary'
 import { HistoryPage } from './pages/History'
 import { HomePage } from './pages/Home'
-import { SettingsPage } from './pages/Settings'
+import { AboutSettingsPage, GeneralSettingsPage, GeneratedWorkoutsSettingsPage, SettingsMenuPage } from './pages/Settings'
 import { TemplateEditorPage } from './pages/TemplateEditor'
 import { TemplatesPage } from './pages/Templates'
 import { WorkoutDetailPage } from './pages/WorkoutDetail'
@@ -14,6 +14,7 @@ import { WorkoutDetailPage } from './pages/WorkoutDetail'
 function App() {
   return (
     <div className="min-h-full pb-24">
+      <RestTimerBar />
       <main className="mx-auto max-w-xl px-4 pt-6">
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -24,11 +25,13 @@ function App() {
           <Route path="/history/:workoutId" element={<WorkoutDetailPage />} />
           <Route path="/exercises" element={<ExerciseLibraryPage />} />
           <Route path="/exercises/:id" element={<ExerciseDetailPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings" element={<SettingsMenuPage />} />
+          <Route path="/settings/general" element={<GeneralSettingsPage />} />
+          <Route path="/settings/generated-workouts" element={<GeneratedWorkoutsSettingsPage />} />
+          <Route path="/settings/about" element={<AboutSettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      <RestTimerBar />
       <NavBar />
     </div>
   )
