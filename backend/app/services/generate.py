@@ -15,7 +15,7 @@ from datetime import date
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.models.exercise_template import ExerciseTemplate
+from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.services.exercise_templates import GROUP_MUSCLES
 from app.services.recency import IN_NEED_DAYS, days_since_trained
@@ -96,13 +96,13 @@ def _priority(ex: ExerciseTemplate, need: dict[str, float]) -> float:
     return sum(share * need[slug] for slug, share in shares.items()) / total
 
 
-def _pick(pool: list[ExerciseTemplate], need: dict[str, float], taken: set[int], require_help: bool):
+def _pick(pool: list[ExerciseTemplate], need: dict[str, float], taken: set[tuple[str, int]], require_help: bool):
     """The exercise that helps the most overdue muscles, not already taken. When `require_help`,
     exercises that help none of the muscles in `need` are skipped. Covering a pick lowers the need
     of the muscles it works, so the next pick works something else."""
     best, best_score = None, -1.0
     for ex in pool:
-        if ex.id in taken:
+        if ex.ref in taken:
             continue
         score = _priority(ex, need)
         if require_help and score <= 0:
@@ -130,15 +130,16 @@ def plan(
 
     With familiar_first, exercises the person has done before are used first, and unfamiliar ones
     only once those run out. Without it, every exercise is a candidate."""
-    exercises = ExerciseTemplate.query.options(selectinload(ExerciseTemplate.app_muscle_group)).all()
+    exercises: list = ExerciseTemplate.query.options(selectinload(ExerciseTemplate.app_muscle_group)).all()
+    exercises += CustomExerciseTemplate.query.all()
     done = {
-        we.exercise_id
+        we.exercise_ref
         for we in WorkoutExercise.query.join(WorkoutSet, WorkoutSet.workout_exercise_id == WorkoutExercise.id)
         .filter(WorkoutSet.completed.is_(True))
         .all()
     }
     everything = {k: [ex for ex in exercises if _kind(ex) == k] for k in ("strength", "stretch", "cardio")}
-    familiar = {k: [ex for ex in everything[k] if ex.id in done] for k in everything}
+    familiar = {k: [ex for ex in everything[k] if ex.ref in done] for k in everything}
     pool_order = [familiar, everything] if familiar_first else [everything]
 
     days = days_since_trained(today)  # the one frequency calculation; never-trained muscles are absent
@@ -158,7 +159,7 @@ def plan(
         return None
 
     chosen: list[ExerciseTemplate] = []
-    taken: set[int] = set()
+    taken: set[tuple[str, int]] = set()
     need = dict(in_need)
     for i in range(count):
         ex = None
@@ -186,14 +187,14 @@ def plan(
         if ex is None:
             break
         chosen.append(ex)
-        taken.add(ex.id)
+        taken.add(ex.ref)
 
     for flag, kind in ((stretching, "stretch"), (cardio, "cardio")):
         if flag:
             ex = pick_from_groups(kind, None, dict(overdue), taken, require_help=False)
             if ex is not None:
                 chosen.append(ex)
-                taken.add(ex.id)
+                taken.add(ex.ref)
     return chosen
 
 
@@ -220,11 +221,17 @@ def create_generated_workout(exercises: list[ExerciseTemplate]) -> Workout:
     db.session.add(workout)
     db.session.flush()
     for position, ex in enumerate(exercises):
-        we = WorkoutExercise(workout_id=workout.id, exercise_id=ex.id, position=position)
+        kind, ex_id = ex.ref
+        we = WorkoutExercise(
+            workout_id=workout.id,
+            exercise_id=ex_id if kind == "catalog" else None,
+            custom_exercise_id=ex_id if kind == "custom" else None,
+            position=position,
+        )
         db.session.add(we)
         db.session.flush()
         target_sets = STRENGTH_SETS if ex.tracking_type in ("weight_reps", "bodyweight_reps") else 1
-        spec = SetPlanSpec(exercise_id=ex.id, target_sets=target_sets)
+        spec = SetPlanSpec.for_exercise(ex, target_sets=target_sets)
         db.session.add_all(make_planned_sets(we.id, plan_sets(spec)))
     db.session.commit()
     return workout

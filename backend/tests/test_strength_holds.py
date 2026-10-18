@@ -23,7 +23,6 @@ def _exercise(name, tracking, group, primary, secondary=()):
         muscle_group_id=g.id,
         primary_muscles=list(primary),
         secondary_muscles=list(secondary),
-        is_custom=False,
     )
     db.session.add(ex)
     db.session.flush()

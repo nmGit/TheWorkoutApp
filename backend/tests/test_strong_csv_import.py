@@ -56,7 +56,6 @@ def test_resolve_exercise_base_name_reconciles_equipment(app, chest_group):
         muscle_group_id=chest_group.id,
         equipment="dumbbell",
         tracking_type="weight_reps",
-        is_custom=False,
     )
     db.session.add(ex)
     db.session.commit()

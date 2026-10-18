@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.extensions import db
-from app.models.exercise_template import ExerciseTemplate
+from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
 from scripts import seed_exercise_templates as seed_mod
 from scripts.seed_exercise_templates import name_tokens, seed
 
@@ -65,7 +65,8 @@ def datasets(app, tmp_path, monkeypatch):
 
 
 def _by_name(name):
-    return ExerciseTemplate.query.filter_by(name=name).one()
+    found = ExerciseTemplate.query.filter_by(name=name).first()
+    return found or CustomExerciseTemplate.query.filter_by(name=name).one()
 
 
 def test_name_tokens_is_order_hyphen_and_plural_insensitive():
@@ -221,7 +222,7 @@ def test_curated_creates_missing_custom_exercise_on_fresh_install(app, datasets)
     datasets.write(curated_exercises=curated)
     summary = seed(app)
     template = _by_name("My Own Move")
-    assert template.is_custom and template.external_id is None and summary["curated_created"] == 1
+    assert isinstance(template, CustomExerciseTemplate) and summary["curated_created"] == 1
 
 
 def test_curated_name_differing_only_in_case_does_not_duplicate_on_reseed(app, datasets):

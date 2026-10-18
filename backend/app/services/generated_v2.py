@@ -77,7 +77,8 @@ def generated_rir(reps: int, weight_kg: float, reference_e1rm: float) -> float:
 
 @dataclass
 class ExerciseSession:
-    exercise_id: int
+    exercise_ref: tuple[str, int]  # see models/exercise_reference.py -- collision-free across
+    # the catalog/custom split, unlike a bare exercise id
     kind: str
     value: float
     muscle_weights: dict[str, float]  # each muscle's share of this exercise
@@ -86,7 +87,9 @@ class ExerciseSession:
     hard_sets: int           # generated: counting sets with an estimated RIR of 3 or less
 
 
-def _exercise_sessions(workout: Workout, references: dict[int, float]) -> list[ExerciseSession]:
+def _exercise_sessions(
+    workout: Workout, references: dict[tuple[str, int], float]
+) -> list[ExerciseSession]:
     out = []
     body_weight_kg: float | None = None
     body_weight_checked = False
@@ -104,7 +107,7 @@ def _exercise_sessions(workout: Workout, references: dict[int, float]) -> list[E
                 body_weight_checked = True
             if is_bodyweight and body_weight_kg is None:
                 continue  # never logged a body weight -- nothing to credit this session with
-            ref = references.get(ex.id)
+            ref = references.get(ex.ref)
             scored = []
             hard = 0
             for s in we.sets:
@@ -120,7 +123,7 @@ def _exercise_sessions(workout: Workout, references: dict[int, float]) -> list[E
                 continue
             top = sorted(scored, key=lambda c: c[0], reverse=True)[:TOP_SETS]
             value = sum(e * rw for e, rw in top) / sum(rw for _, rw in top)
-            out.append(ExerciseSession(ex.id, LOAD, value, shares, len(scored), max(e for e, _ in scored), hard))
+            out.append(ExerciseSession(ex.ref, LOAD, value, shares, len(scored), max(e for e, _ in scored), hard))
         elif ex.tracking_type == "time":
             group = ex.app_muscle_group.name if ex.app_muscle_group else None
             if group in HOLD_EXCLUDED_GROUPS:
@@ -128,7 +131,7 @@ def _exercise_sessions(workout: Workout, references: dict[int, float]) -> list[E
             holds = sorted((float(s.duration_seconds) for s in we.sets if _is_hold_set(s)), reverse=True)[:TOP_SETS]
             if not holds:
                 continue
-            out.append(ExerciseSession(ex.id, HOLD, sum(holds) / len(holds), shares, len(holds), None, 0))
+            out.append(ExerciseSession(ex.ref, HOLD, sum(holds) / len(holds), shares, len(holds), None, 0))
     return out
 
 
@@ -136,12 +139,12 @@ class V2Series:
     """Replays completed workouts oldest first, producing generated data per workout."""
 
     def __init__(self):
-        # (exercise id, kind) -> [(session start, natural log of the session value)]
-        self.history: dict[tuple[int, str], list[tuple]] = defaultdict(list)
-        self.best_history: dict[int, list[float]] = defaultdict(list)
+        # (exercise ref, kind) -> [(session start, natural log of the session value)]
+        self.history: dict[tuple[tuple[str, int], str], list[tuple]] = defaultdict(list)
+        self.best_history: dict[tuple[str, int], list[float]] = defaultdict(list)
 
-    def reference(self, exercise_id: int) -> float | None:
-        recent = self.best_history.get(exercise_id)
+    def reference(self, exercise_ref: tuple[str, int]) -> float | None:
+        recent = self.best_history.get(exercise_ref)
         if not recent:
             return None
         return max(recent[-REFERENCE_WINDOW:])
@@ -160,19 +163,19 @@ class V2Series:
 
     def step(self, workout: Workout) -> dict:
         when = workout.started_at
-        refs = {ex_id: self.reference(ex_id) for ex_id in self.best_history}
+        refs = {ref: self.reference(ref) for ref in self.best_history}
         sessions = _exercise_sessions(workout, {k: v for k, v in refs.items() if v is not None})
 
         # muscle -> [(log change, evidence weight)]
         terms = defaultdict(list)
         set_aside = set()  # sessions judged to be entry errors
         for sess in sessions:
-            key = (sess.exercise_id, sess.kind)
+            key = (sess.exercise_ref, sess.kind)
             base = self._baseline(key, when)
             if base is None:
                 # Too little history to compare with. Still refuse a session that is far
                 # above the exercise's best so far, so an entry error can't become history.
-                ref = refs.get(sess.exercise_id)
+                ref = refs.get(sess.exercise_ref)
                 if ref is not None and sess.value > OUTLIER_RATIO * ref:
                     set_aside.add(id(sess))
                 continue
@@ -185,11 +188,11 @@ class V2Series:
 
         # Fold this workout into the history, after scoring it. Set-aside sessions are skipped.
         for sess in sessions:
-            key = (sess.exercise_id, sess.kind)
+            key = (sess.exercise_ref, sess.kind)
             if id(sess) not in set_aside:
                 self.history[key].append((when, math.log(sess.value)))
                 if sess.best_e1rm is not None:
-                    self.best_history[sess.exercise_id].append(sess.best_e1rm)
+                    self.best_history[sess.exercise_ref].append(sess.best_e1rm)
 
         worked = {slug for sess in sessions for slug in sess.muscle_weights}
         muscles = {}

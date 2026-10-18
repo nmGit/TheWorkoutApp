@@ -34,7 +34,7 @@ def test_1rm_for_bodyweight_exercise_adds_logged_body_weight(app):
 
     with app.app_context():
         db.session.add(BodyweightEntry(recorded_at=date(2026, 1, 1), weight=80, unit="kg"))
-        pushup = ExerciseTemplate(name="push up", tracking_type="bodyweight_reps", is_custom=False)
+        pushup = ExerciseTemplate(name="push up", tracking_type="bodyweight_reps")
         db.session.add(pushup)
         db.session.flush()
         workout = Workout(name="w", started_at=datetime(2026, 1, 5, 9, 0, 0))
@@ -60,7 +60,7 @@ def test_1rm_for_bodyweight_exercise_is_none_without_any_logged_body_weight(app)
     from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 
     with app.app_context():
-        pushup = ExerciseTemplate(name="push up", tracking_type="bodyweight_reps", is_custom=False)
+        pushup = ExerciseTemplate(name="push up", tracking_type="bodyweight_reps")
         db.session.add(pushup)
         db.session.flush()
         workout = Workout(name="w", started_at=datetime(2026, 1, 5, 9, 0, 0))
@@ -80,7 +80,7 @@ def test_default_metric_for_bodyweight_exercise_is_est_1rm():
     from app.models.exercise_template import ExerciseTemplate
     from app.services.stats import default_metric_for
 
-    pushup = ExerciseTemplate(name="push up", tracking_type="bodyweight_reps", is_custom=False)
+    pushup = ExerciseTemplate(name="push up", tracking_type="bodyweight_reps")
     # Volume (added weight x reps) is always zero for the common case of no added weight --
     # est_1rm, which now factors in logged body weight, is the useful default instead.
     assert default_metric_for(pushup) == "est_1rm"

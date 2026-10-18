@@ -291,9 +291,13 @@ def completed_workouts() -> list[Workout]:
 
 _LOAD_OPTIONS = (
     selectinload(Workout.exercises).selectinload(WorkoutExercise.sets),
-    selectinload(Workout.exercises)
-    .selectinload(WorkoutExercise.exercise)
-    .selectinload(ExerciseTemplate.app_muscle_group),
+    # WorkoutExercise.exercise isn't an eager-loadable relationship -- it can resolve to either
+    # of two tables in two different databases (see ExerciseReferenceMixin) -- so the catalog
+    # side is fetched lazily instead, one query per distinct exercise id (cheap: SQLAlchemy's
+    # session identity map means a given id is only ever actually fetched once no matter how
+    # many WorkoutExercise rows reference it). The custom side is a real same-database
+    # relationship and can still be eager-loaded.
+    selectinload(Workout.exercises).selectinload(WorkoutExercise.custom_exercise),
 )
 
 

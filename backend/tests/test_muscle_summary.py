@@ -13,12 +13,12 @@ def test_template_muscles_summarise_its_exercises(client, app):
         squat = ExerciseTemplate(
             name="squat", muscle_group_id=legs.id,
             primary_muscles=["quadriceps", "gluteus_maximus"],
-            secondary_muscles=["hamstrings"], is_custom=False,
+            secondary_muscles=["hamstrings"],
         )
         # Legacy spelling of the same muscle as the squat's, so it must appear once.
         press = ExerciseTemplate(
             name="press", muscle_group_id=chest.id,
-            primary_muscles=["pectorals"], secondary_muscles=["quadriceps"], is_custom=False,
+            primary_muscles=["pectorals"], secondary_muscles=["quadriceps"],
         )
         db.session.add_all([squat, press])
         db.session.flush()

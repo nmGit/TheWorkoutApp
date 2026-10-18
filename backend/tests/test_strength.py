@@ -18,7 +18,6 @@ def _bench(**overrides):
         tracking_type="weight_reps",
         primary_muscles=["pectoralis_major"],
         secondary_muscles=["triceps_brachii"],
-        is_custom=False,
     )
     defaults.update(overrides)
     return ExerciseTemplate(**defaults)
@@ -30,7 +29,6 @@ def _pushup(**overrides):
         tracking_type="bodyweight_reps",
         primary_muscles=["pectoralis_major"],
         secondary_muscles=["triceps_brachii"],
-        is_custom=False,
     )
     defaults.update(overrides)
     return ExerciseTemplate(**defaults)

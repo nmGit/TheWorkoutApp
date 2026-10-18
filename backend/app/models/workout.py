@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.extensions import db
 from app.models.constants import WEIGHT_UNITS
+from app.models.exercise_reference import ExerciseReferenceMixin
 
 
 def _utcnow():
@@ -36,14 +37,14 @@ class Workout(db.Model):
         return self.completed_at is None
 
 
-class WorkoutExercise(db.Model):
+class WorkoutExercise(ExerciseReferenceMixin, db.Model):
     __tablename__ = "workout_exercises"
 
     id = db.Column(db.Integer, primary_key=True)
     workout_id = db.Column(
         db.Integer, db.ForeignKey("workouts.id", ondelete="CASCADE"), nullable=False
     )
-    exercise_id = db.Column(db.Integer, db.ForeignKey("exercise_templates.id"), nullable=False)
+    # exercise_id / custom_exercise_id / .exercise: see ExerciseReferenceMixin.
     position = db.Column(db.Integer, nullable=False, default=0)
     notes = db.Column(db.Text, nullable=True)
     # Exercises sharing a non-null value, contiguous by position, are a superset -- done back to
@@ -52,7 +53,6 @@ class WorkoutExercise(db.Model):
     superset_group = db.Column(db.Integer, nullable=True)
 
     workout = db.relationship("Workout", back_populates="exercises")
-    exercise = db.relationship("ExerciseTemplate")
     sets = db.relationship(
         "WorkoutSet",
         back_populates="workout_exercise",

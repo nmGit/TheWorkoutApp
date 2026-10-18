@@ -7,6 +7,7 @@ single-user data volumes and avoids a PR cache to keep in sync.
 from datetime import date, timedelta
 
 from app.extensions import db
+from app.models.exercise_reference import exercise_ref_filter
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.services.dates import local_date, local_midnight_utc
 from app.services.units import convert_weight, meters_to_unit
@@ -21,12 +22,12 @@ def _range_cutoff(range_key: str):
     return date.today() - timedelta(days=days)
 
 
-def _completed_sets_query(exercise_id: int):
+def _completed_sets_query(exercise):
     return (
         db.session.query(WorkoutSet, Workout)
         .join(WorkoutExercise, WorkoutSet.workout_exercise_id == WorkoutExercise.id)
         .join(Workout, WorkoutExercise.workout_id == Workout.id)
-        .filter(WorkoutExercise.exercise_id == exercise_id)
+        .filter(exercise_ref_filter(WorkoutExercise, exercise.ref))
         .filter(Workout.completed_at.isnot(None))
     )
 
@@ -38,7 +39,7 @@ def _session_date(workout: Workout) -> date:
 def get_exercise_series(exercise, metric: str, range_key: str, weight_unit: str, distance_unit: str):
     """One point per workout session, chronological, for `metric`."""
     cutoff = _range_cutoff(range_key)
-    rows = _completed_sets_query(exercise.id).all()
+    rows = _completed_sets_query(exercise).all()
 
     by_workout: dict[int, dict] = {}
     for s, w in rows:
@@ -133,7 +134,7 @@ def default_metric_for(exercise) -> str:
 
 
 def get_exercise_prs(exercise, weight_unit: str, distance_unit: str):
-    rows = _completed_sets_query(exercise.id).all()
+    rows = _completed_sets_query(exercise).all()
     if exercise.tracking_type == "cardio":
         return _cardio_prs(rows, distance_unit)
     return _strength_prs(rows, weight_unit)
@@ -243,23 +244,26 @@ def get_dashboard(weight_unit: str, distance_unit: str):
 
 
 def _recent_prs(weight_unit: str, distance_unit: str, days: int = 7):
-    from app.models.exercise_template import ExerciseTemplate
+    from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
 
     cutoff = date.today() - timedelta(days=days)
     cutoff_dt = local_midnight_utc(cutoff)
     results = []
 
-    exercise_ids = (
-        db.session.query(WorkoutExercise.exercise_id)
+    recent = (
+        db.session.query(WorkoutExercise.exercise_id, WorkoutExercise.custom_exercise_id)
         .join(Workout, WorkoutExercise.workout_id == Workout.id)
         .filter(Workout.completed_at.isnot(None))
         .filter(Workout.started_at >= cutoff_dt)
         .distinct()
         .all()
     )
+    exercises = [
+        db.session.get(ExerciseTemplate, eid) if eid is not None else db.session.get(CustomExerciseTemplate, ceid)
+        for eid, ceid in recent
+    ]
 
-    for (exercise_id,) in exercise_ids:
-        exercise = db.session.get(ExerciseTemplate, exercise_id)
+    for exercise in exercises:
         if exercise is None:
             continue
         prs = get_exercise_prs(exercise, weight_unit, distance_unit)
@@ -268,6 +272,7 @@ def _recent_prs(weight_unit: str, distance_unit: str, days: int = 7):
                 results.append(
                     {
                         "exercise_id": exercise.id,
+                        "is_custom": exercise.is_custom,
                         "exercise_name": exercise.name,
                         "metric": metric,
                         **pr,

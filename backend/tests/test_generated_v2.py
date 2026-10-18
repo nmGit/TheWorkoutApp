@@ -25,7 +25,7 @@ def test_generated_rir_uses_the_reference_not_the_set_itself():
 
 
 def _exercise(name, primary, tracking="weight_reps"):
-    ex = ExerciseTemplate(name=name, tracking_type=tracking, primary_muscles=primary, secondary_muscles=[], is_custom=False)
+    ex = ExerciseTemplate(name=name, tracking_type=tracking, primary_muscles=primary, secondary_muscles=[])
     db.session.add(ex)
     db.session.flush()
     return ex

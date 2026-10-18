@@ -12,6 +12,7 @@ Warm-ups are never used to progress a load: only working sets count.
 
 from dataclasses import dataclass
 
+from app.models.exercise_reference import exercise_ref_filter
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.models.settings import UserSettings
 from app.services.units import convert_weight
@@ -25,13 +26,32 @@ class SetPlanSpec:
     """What plan_sets needs to know about an exercise slot: how many sets of each kind to start
     with, and an optional rep-range override. A ``TemplateExercise`` already has all of these
     attributes, so it can be passed to plan_sets directly; a caller with no template (a generated
-    workout) builds one of these instead."""
+    workout) builds one of these instead. Exactly one of exercise_id/custom_exercise_id, same as
+    ExerciseReferenceMixin (TemplateExercise/WorkoutExercise) -- see that for why there are two."""
 
-    exercise_id: int
+    exercise_id: int | None = None
+    custom_exercise_id: int | None = None
     target_reps: str | None = None
     warmup_sets: int = 0
     target_sets: int = 1
     drop_sets: int = 0
+
+    @property
+    def exercise_ref(self) -> tuple[str, int]:
+        if self.exercise_id is not None:
+            return ("catalog", self.exercise_id)
+        return ("custom", self.custom_exercise_id)
+
+    @classmethod
+    def for_exercise(cls, exercise, **kwargs) -> "SetPlanSpec":
+        """Build a spec targeting a specific exercise object (ExerciseTemplate or
+        CustomExerciseTemplate) without the caller having to know which kind it got."""
+        kind, exercise_id = exercise.ref
+        return cls(
+            exercise_id=exercise_id if kind == "catalog" else None,
+            custom_exercise_id=exercise_id if kind == "custom" else None,
+            **kwargs,
+        )
 
 
 def rep_range_or_none(text: str | None) -> tuple[int, int] | None:
@@ -54,10 +74,10 @@ def parse_rep_range(text: str | None) -> tuple[int, int]:
     return rep_range_or_none(text) or DEFAULT_REP_RANGE
 
 
-def _last_sets_by_kind(exercise_id: int) -> dict[str, list]:
+def _last_sets_by_kind(exercise_ref: tuple[str, int]) -> dict[str, list]:
     last = (
         WorkoutExercise.query.join(Workout, Workout.id == WorkoutExercise.workout_id)
-        .filter(WorkoutExercise.exercise_id == exercise_id, Workout.completed_at.isnot(None))
+        .filter(exercise_ref_filter(WorkoutExercise, exercise_ref), Workout.completed_at.isnot(None))
         .order_by(Workout.started_at.desc(), Workout.id.desc())
         .first()
     )
@@ -125,7 +145,7 @@ def progress_working(working: list, rep_range: tuple[int, int], settings: UserSe
 def plan_sets(template_exercise) -> list[dict]:
     """Field values for each set a workout starts with, in the order: warm-ups, working, drops."""
     settings = UserSettings.get()
-    previous = _last_sets_by_kind(template_exercise.exercise_id)
+    previous = _last_sets_by_kind(template_exercise.exercise_ref)
     # The exercise's own range wins; otherwise the default range from Settings.
     rep_range = parse_rep_range(template_exercise.target_reps or settings.default_rep_range)
     progressed = progress_working(previous["working"], rep_range, settings)

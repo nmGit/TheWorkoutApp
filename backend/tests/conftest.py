@@ -9,6 +9,11 @@ from app.models.exercise_template import ExerciseTemplate
 
 class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    # A separate in-memory database for the catalog bind, mirroring the two-file split in
+    # production (a bare "sqlite:///:memory:" would otherwise just be the same kind of URI
+    # reused, but SQLAlchemy gives each bind its own engine/connection, so this is already an
+    # independent database -- not a size-of-one toy, the same separation prod has).
+    SQLALCHEMY_BINDS = {"catalog": "sqlite:///:memory:"}
     TESTING = True
 
 
@@ -41,7 +46,6 @@ def bench_press(app, chest_group):
         muscle_group_id=chest_group.id,
         equipment="barbell",
         tracking_type="weight_reps",
-        is_custom=False,
     )
     db.session.add(exercise)
     db.session.commit()

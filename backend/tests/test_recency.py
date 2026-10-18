@@ -14,9 +14,9 @@ def test_muscle_recency_counts_completed_working_sets_only(client, app):
         cardio = MuscleGroup(name="Cardio", display_order=7)
         db.session.add_all([legs, chest, cardio])
         db.session.flush()
-        squat = ExerciseTemplate(name="squat", muscle_group_id=legs.id, tracking_type="weight_reps", primary_muscles=["quadriceps"], is_custom=False)
-        bench = ExerciseTemplate(name="bench", muscle_group_id=chest.id, tracking_type="weight_reps", primary_muscles=["pectoralis_major"], is_custom=False)
-        run = ExerciseTemplate(name="run", muscle_group_id=cardio.id, tracking_type="cardio", primary_muscles=[], is_custom=False)
+        squat = ExerciseTemplate(name="squat", muscle_group_id=legs.id, tracking_type="weight_reps", primary_muscles=["quadriceps"])
+        bench = ExerciseTemplate(name="bench", muscle_group_id=chest.id, tracking_type="weight_reps", primary_muscles=["pectoralis_major"])
+        run = ExerciseTemplate(name="run", muscle_group_id=cardio.id, tracking_type="cardio", primary_muscles=[])
         db.session.add_all([squat, bench, run])
         db.session.flush()
 

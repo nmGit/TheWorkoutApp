@@ -13,6 +13,7 @@ from app.models.template import WorkoutTemplate
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.serializers import serialize_set, serialize_workout
 from app.services.dates import local_midnight_utc
+from app.services.exercise_refs import resolve_exercise_reference
 from app.services.sets_plan import SetPlanSpec, make_planned_sets, plan_sets
 from app.services.generated_v2 import score_series_v2, strength_for_workout
 from app.services.strength import completed_workouts
@@ -84,14 +85,12 @@ def list_workouts():
     limit = request.args.get("limit", default=50, type=int)
     offset = request.args.get("offset", default=0, type=int)
 
-    # The muscle summary on each card reads every exercise's template, so load those
-    # in batches rather than one query per workout.
+    # The muscle summary on each card reads every exercise's template. The custom side is a
+    # real relationship and batches here; the catalog side can't (two databases -- see
+    # ExerciseReferenceMixin), but its session identity map means a given exercise id is only
+    # ever actually fetched once regardless of how many workouts/slots reference it.
     workouts = (
-        query.options(
-            selectinload(Workout.exercises)
-            .selectinload(WorkoutExercise.exercise)
-            .selectinload(ExerciseTemplate.app_muscle_group)
-        )
+        query.options(selectinload(Workout.exercises).selectinload(WorkoutExercise.custom_exercise))
         .order_by(Workout.started_at.desc())
         .offset(offset)
         .limit(limit)
@@ -170,7 +169,10 @@ def start_workout():
 
         for te in template.exercises:
             we = WorkoutExercise(
-                workout_id=workout.id, exercise_id=te.exercise_id, position=te.position
+                workout_id=workout.id,
+                exercise_id=te.exercise_id,
+                custom_exercise_id=te.custom_exercise_id,
+                position=te.position,
             )
             db.session.add(we)
             db.session.flush()
@@ -273,12 +275,15 @@ def add_workout_exercise(workout_id):
     if workout is None:
         raise ApiError("Workout not found", 404)
     body = request.get_json(force=True) or {}
-    exercise_id = body.get("exercise_id")
-    if not exercise_id or db.session.get(ExerciseTemplate, exercise_id) is None:
-        raise ApiError("Unknown exercise_id", 404)
+    exercise_id, custom_exercise_id = resolve_exercise_reference(body)
 
     next_position = len(workout.exercises)
-    we = WorkoutExercise(workout_id=workout.id, exercise_id=exercise_id, position=next_position)
+    we = WorkoutExercise(
+        workout_id=workout.id,
+        exercise_id=exercise_id,
+        custom_exercise_id=custom_exercise_id,
+        position=next_position,
+    )
     db.session.add(we)
     db.session.commit()
     return jsonify(serialize_workout(workout)), 201
@@ -403,7 +408,9 @@ def add_set(workout_exercise_id):
         # a template) -- nothing real to copy from within this workout yet, so suggest it the
         # same way starting from a template does: progressive overload from the exercise's last
         # session, as a planned (ghost) value, not a real one (see sets_plan.py).
-        planned = plan_sets(SetPlanSpec(exercise_id=we.exercise_id, target_sets=1))[0]
+        planned = plan_sets(
+            SetPlanSpec(exercise_id=we.exercise_id, custom_exercise_id=we.custom_exercise_id, target_sets=1)
+        )[0]
     new_set = WorkoutSet(
         workout_exercise_id=we.id,
         position=len(we.sets),

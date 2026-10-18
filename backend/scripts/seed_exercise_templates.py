@@ -14,9 +14,12 @@ legacy source stays as the fallback everywhere else.
 
 Idempotent and safe to re-run (e.g. after ``git submodule update --remote``)
 because of one ownership rule: fields the user can edit in the app -- name,
-equipment, tracking_type, muscle_group_id, notes, is_custom -- are set only
-when this script *creates* a row, never on a re-run. Re-runs refresh only the
-dataset-owned fields (instructions, images, tips, attribution, muscles, ...).
+equipment, tracking_type, muscle_group_id -- are set only when this script
+*creates* a row, never on a re-run. Re-runs refresh only the dataset-owned
+fields (instructions, images, tips, attribution, muscles, ...). Notes are no
+longer one of them: a catalog row's ``notes`` is this user's own commentary
+(``CatalogExerciseNote``, in the other database), not catalog data this
+script would ever touch -- see models/exercise_template.py.
 
 How a RepDB entry finds its template, in priority order:
 
@@ -46,7 +49,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import create_app
 from app.extensions import db
 from app.models.exercise import MuscleGroup
-from app.models.exercise_template import ExerciseTemplate
+from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
 from app.services.exercise_templates import (
     equipment_type_for,
     equipment_type_for_repdb,
@@ -117,7 +120,6 @@ def seed_legacy(app, summary):
             body_part = item.get("body_part")
             template = ExerciseTemplate(
                 external_id=item["id"],
-                is_custom=False,
                 # App-owned fields: set once, here, and never again.
                 name=item["name"],
                 equipment=equipment_type_for(item.get("equipment")),
@@ -157,9 +159,18 @@ def seed_curated(created_legacy, summary):
         group_id = _muscle_group_id(item["muscle_group"])
         target = created_legacy.get(item["name"].lower())
         if target is None:
-            if ExerciseTemplate.query.filter(db.func.lower(ExerciseTemplate.name) == item["name"].lower()).first() is not None:
+            name = item["name"].lower()
+            exists = (
+                ExerciseTemplate.query.filter(db.func.lower(ExerciseTemplate.name) == name).first() is not None
+                or CustomExerciseTemplate.query.filter(db.func.lower(CustomExerciseTemplate.name) == name).first()
+                is not None
+            )
+            if exists:
                 continue
-            target = ExerciseTemplate(name=item["name"], is_custom=True)
+            # Not in either dataset -- one of this user's own exercises, seeded as a custom one
+            # (user data) rather than a catalog row, since curated_exercises.json captures a
+            # fresh install's personal exercise list, not a correction to the shared catalog.
+            target = CustomExerciseTemplate(name=item["name"])
             db.session.add(target)
             summary["curated_created"] += 1
         else:
@@ -247,7 +258,6 @@ def seed_repdb(app, summary):
         if slug in claimed:
             continue
         template = ExerciseTemplate(
-            is_custom=False,
             # App-owned fields: set once, here, and never again.
             name=record["name_en"],
             equipment=equipment_type_for_repdb(record.get("equipment")),
@@ -281,6 +291,12 @@ def seed_repdb(app, summary):
 
 
 def seed(app, dry_run=False):
+    # Idempotent -- only creates tables that don't exist yet, so this also bootstraps the
+    # catalog schema on a fresh install (a brand new CATALOG_DATABASE_URL has no tables at all
+    # until something creates them; this script is that something, since the catalog isn't
+    # Alembic-migrated -- see docs/data_model.rst "Database split").
+    db.create_all(bind_key="catalog")
+
     summary = {
         k: 0
         for k in (

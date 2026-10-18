@@ -11,7 +11,6 @@ def _second_exercise(chest_group, name="Incline Press"):
         muscle_group_id=chest_group.id,
         equipment="barbell",
         tracking_type="weight_reps",
-        is_custom=False,
     )
     db.session.add(ex)
     db.session.commit()

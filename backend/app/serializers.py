@@ -159,6 +159,7 @@ def serialize_template_exercise(te):
     return {
         "id": te.id,
         "exercise_id": te.exercise_id,
+        "custom_exercise_id": te.custom_exercise_id,
         "exercise_name": te.exercise.name if te.exercise else None,
         "position": te.position,
         "target_sets": te.target_sets,
@@ -233,6 +234,7 @@ def serialize_workout_exercise(we, include_sets=True):
     data = {
         "id": we.id,
         "exercise_id": we.exercise_id,
+        "custom_exercise_id": we.custom_exercise_id,
         "exercise_name": we.exercise.name if we.exercise else None,
         "tracking_type": we.exercise.tracking_type if we.exercise else None,
         "position": we.position,

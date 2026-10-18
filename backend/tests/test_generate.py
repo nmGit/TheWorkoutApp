@@ -36,9 +36,9 @@ def test_second_pick_works_the_next_overdue_muscle(app):
         db.session.add_all([chest, back])
         db.session.flush()
         bench = ExerciseTemplate(name="bench", muscle_group_id=chest.id, tracking_type="weight_reps",
-                                 primary_muscles=["pectoralis_major"], secondary_muscles=["triceps_brachii"], is_custom=False)
+                                 primary_muscles=["pectoralis_major"], secondary_muscles=["triceps_brachii"])
         pulldown = ExerciseTemplate(name="pulldown", muscle_group_id=back.id, tracking_type="weight_reps",
-                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[], is_custom=False)
+                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[])
         db.session.add_all([bench, pulldown])
         db.session.flush()
         _session(bench, 8)
@@ -56,7 +56,7 @@ def test_with_no_history_the_plan_falls_back_to_all_exercises(app):
         db.session.add(chest)
         db.session.flush()
         db.session.add(ExerciseTemplate(name="new fly", muscle_group_id=chest.id, tracking_type="weight_reps",
-                                        primary_muscles=["pectoralis_major"], secondary_muscles=[], is_custom=True))
+                                        primary_muscles=["pectoralis_major"], secondary_muscles=[]))
         db.session.commit()
         assert [e.name for e in plan(3, stretching=False, cardio=False, today=date.today())] == ["new fly"]
 
@@ -67,7 +67,7 @@ def test_generate_endpoint_creates_an_active_workout_and_refuses_a_second(client
         db.session.add(back)
         db.session.flush()
         pulldown = ExerciseTemplate(name="pulldown", muscle_group_id=back.id, tracking_type="weight_reps",
-                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[], is_custom=False)
+                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[])
         db.session.add(pulldown)
         db.session.flush()
         _session(pulldown, 3)
@@ -92,7 +92,7 @@ def test_generated_workout_sets_use_progressive_overload(client, app):
         db.session.add(back)
         db.session.flush()
         pulldown = ExerciseTemplate(name="pulldown", muscle_group_id=back.id, tracking_type="weight_reps",
-                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[], is_custom=False)
+                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[])
         db.session.add(pulldown)
         db.session.flush()
         _session(pulldown, 3)  # one completed session: 50kg x 8 reps
@@ -121,9 +121,9 @@ def test_familiar_first_uses_known_exercises_before_unfamiliar_ones(app):
         db.session.add(back)
         db.session.flush()
         pulldown = ExerciseTemplate(name="pulldown", muscle_group_id=back.id, tracking_type="weight_reps",
-                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[], is_custom=False)
+                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[])
         chin = ExerciseTemplate(name="chin-up", muscle_group_id=back.id, tracking_type="weight_reps",
-                                primary_muscles=["rhomboids"], secondary_muscles=[], is_custom=False)
+                                primary_muscles=["rhomboids"], secondary_muscles=[])
         db.session.add_all([pulldown, chin])
         db.session.flush()
         _session(pulldown, 6)
@@ -143,9 +143,9 @@ def test_bodyweight_and_timed_strength_work_is_eligible(app):
         db.session.add(core)
         db.session.flush()
         crunch = ExerciseTemplate(name="bicycle crunch", muscle_group_id=core.id, tracking_type="bodyweight_reps",
-                                  primary_muscles=["obliques"], secondary_muscles=[], is_custom=False)
+                                  primary_muscles=["obliques"], secondary_muscles=[])
         plank = ExerciseTemplate(name="side plank", muscle_group_id=core.id, tracking_type="time",
-                                 primary_muscles=["obliques"], secondary_muscles=[], is_custom=False)
+                                 primary_muscles=["obliques"], secondary_muscles=[])
         db.session.add_all([crunch, plank])
         db.session.flush()
         _session(crunch, 10)
@@ -165,11 +165,11 @@ def test_a_session_uses_the_two_groups_with_the_most_in_need_muscles(app):
         db.session.add_all([chest, back, legs])
         db.session.flush()
         bench = ExerciseTemplate(name="bench", muscle_group_id=chest.id, tracking_type="weight_reps",
-                                 primary_muscles=["pectoralis_major"], secondary_muscles=[], is_custom=False)
+                                 primary_muscles=["pectoralis_major"], secondary_muscles=[])
         pulldown = ExerciseTemplate(name="pulldown", muscle_group_id=back.id, tracking_type="weight_reps",
-                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[], is_custom=False)
+                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[])
         squat = ExerciseTemplate(name="squat", muscle_group_id=legs.id, tracking_type="weight_reps",
-                                 primary_muscles=["quadriceps"], secondary_muscles=[], is_custom=False)
+                                 primary_muscles=["quadriceps"], secondary_muscles=[])
         db.session.add_all([bench, pulldown, squat])
         db.session.flush()
         _session(bench, 8)
@@ -192,9 +192,9 @@ def test_generated_workout_is_named_after_its_groups(app):
         db.session.add_all([chest, legs])
         db.session.flush()
         bench = ExerciseTemplate(name="bench", muscle_group_id=chest.id, tracking_type="weight_reps",
-                                 primary_muscles=["pectoralis_major"], secondary_muscles=[], is_custom=False)
+                                 primary_muscles=["pectoralis_major"], secondary_muscles=[])
         squat = ExerciseTemplate(name="squat", muscle_group_id=legs.id, tracking_type="weight_reps",
-                                 primary_muscles=["quadriceps"], secondary_muscles=[], is_custom=False)
+                                 primary_muscles=["quadriceps"], secondary_muscles=[])
         db.session.add_all([bench, squat])
         db.session.flush()
         assert workout_name([bench, squat]) == "Chest & Legs"
@@ -211,11 +211,11 @@ def test_chosen_groups_limit_the_session(app):
         db.session.add_all([chest, back, legs])
         db.session.flush()
         bench = ExerciseTemplate(name="bench", muscle_group_id=chest.id, tracking_type="weight_reps",
-                                 primary_muscles=["pectoralis_major"], secondary_muscles=[], is_custom=False)
+                                 primary_muscles=["pectoralis_major"], secondary_muscles=[])
         pulldown = ExerciseTemplate(name="pulldown", muscle_group_id=back.id, tracking_type="weight_reps",
-                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[], is_custom=False)
+                                    primary_muscles=["latissimus_dorsi"], secondary_muscles=[])
         squat = ExerciseTemplate(name="squat", muscle_group_id=legs.id, tracking_type="weight_reps",
-                                 primary_muscles=["quadriceps"], secondary_muscles=[], is_custom=False)
+                                 primary_muscles=["quadriceps"], secondary_muscles=[])
         db.session.add_all([bench, pulldown, squat])
         db.session.flush()
         _session(bench, 9)

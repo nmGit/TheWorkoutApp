@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 from app.extensions import db
-from app.models.exercise_template import ExerciseTemplate
+from app.models.exercise_template import CustomExerciseTemplate, ExerciseTemplate
 
 
 def test_start_and_finish_blank_workout(client, bench_press):
@@ -223,7 +223,6 @@ def _make_exercise(app, name, muscle_group_id):
         muscle_group_id=muscle_group_id,
         equipment="barbell",
         tracking_type="weight_reps",
-        is_custom=False,
     )
     db.session.add(exercise)
     db.session.commit()
@@ -355,6 +354,31 @@ def _finished_session(client, exercise_id, sets):
 def _template_with(client, exercise_id, **fields):
     body = {"exercise_id": exercise_id, "target_sets": 2, **fields}
     return client.post("/api/templates", json={"name": "T", "exercises": [body]}).get_json()["id"]
+
+
+def test_starting_a_workout_from_a_template_handles_a_custom_exercise_slot(client, app, bench_press):
+    """Real bug caught live (post catalog/user database split): a template exercise slot can
+    point at a custom exercise (TemplateExercise.custom_exercise_id) instead of a catalog one
+    (.exercise_id) -- starting a workout from it must copy whichever one is actually set, not
+    always .exercise_id, or the new WorkoutExercise row violates the "exactly one" constraint."""
+    with app.app_context():
+        custom = CustomExerciseTemplate(name="My Own Move", tracking_type="weight_reps")
+        db.session.add(custom)
+        db.session.commit()
+        custom_id = custom.id
+
+    tid = client.post(
+        "/api/templates",
+        json={"name": "T", "exercises": [{"custom_exercise_id": custom_id, "target_sets": 2}]},
+    ).get_json()["id"]
+
+    resp = client.post("/api/workouts", json={"template_id": tid})
+    assert resp.status_code == 201
+    we = resp.get_json()["exercises"][0]
+    assert we["exercise_id"] is None
+    assert we["custom_exercise_id"] == custom_id
+    assert we["exercise_name"] == "My Own Move"
+    assert len(we["sets"]) == 2
 
 
 def test_double_progression_adds_load_once_the_top_of_the_range_is_reached(client, bench_press):
