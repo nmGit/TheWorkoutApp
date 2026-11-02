@@ -312,6 +312,45 @@ def test_removing_the_middle_of_a_superset_is_fine(client, bench_press, chest_gr
     assert groups[we2] is not None and groups[we2] == groups[we3]
 
 
+def test_removing_the_middle_of_a_5_chain_splits_into_two_independent_groups(client, bench_press, chest_group):
+    """Removing the middle of a chain of 5 (not 3) leaves two separate runs of 2 each --
+    neither dissolves (both are >= 2 long), so without normalize_superset_groups giving the
+    second one a fresh id, both would still carry the *same* group number from the original
+    5-chain and every group-keyed consumer (equalize_workout_superset_sets, delete_set) would
+    wrongly treat all 4 remaining exercises as one superset."""
+    incline = _second_exercise(chest_group)
+    flye = _second_exercise(chest_group, name="Cable Flye")
+    pec_deck = _second_exercise(chest_group, name="Pec Deck")
+    cable_fly = _second_exercise(chest_group, name="Cable Crossover")
+    workout = client.post("/api/workouts", json={}).get_json()
+    we1 = _add_exercise(client, workout["id"], bench_press.id)
+    we2 = _add_exercise(client, workout["id"], incline.id)
+    we3 = _add_exercise(client, workout["id"], flye.id)
+    we4 = _add_exercise(client, workout["id"], pec_deck.id)
+    we5 = _add_exercise(client, workout["id"], cable_fly.id)
+    _link(client, workout["id"], we1, we2)
+    _link(client, workout["id"], we2, we3)
+    _link(client, workout["id"], we3, we4)
+    _link(client, workout["id"], we4, we5)
+
+    resp = client.patch(f"/api/workouts/{workout['id']}/exercises/{we3}", json={"superset_group": None})
+    groups = {e["id"]: e["superset_group"] for e in resp.get_json()["exercises"]}
+    assert groups[we3] is None
+    assert groups[we1] is not None and groups[we1] == groups[we2]
+    assert groups[we4] is not None and groups[we4] == groups[we5]
+    # The two leftover pairs must NOT share a group id, or every group-keyed consumer below
+    # would wrongly treat all four as one superset.
+    assert groups[we1] != groups[we4]
+
+    # Confirm it's not just the group id that's distinct -- adding a set to we1 must not fan
+    # out to we4/we5, which a shared (buggy) group id would cause.
+    client.post(f"/api/workout-exercises/{we1}/sets", json={})
+    final = client.get(f"/api/workouts/{workout['id']}").get_json()
+    counts = {e["id"]: len(e["sets"]) for e in final["exercises"]}
+    assert counts[we1] == 1 and counts[we2] == 1
+    assert counts[we4] == 0 and counts[we5] == 0
+
+
 def test_removing_one_end_of_a_chain_leaves_the_rest_linked(client, bench_press, chest_group):
     """Removing the *first* member of a 3-exercise giant set leaves the other two still a
     valid (if now shorter) superset, unlike removing the middle one."""

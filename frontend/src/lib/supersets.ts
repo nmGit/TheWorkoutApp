@@ -14,9 +14,15 @@ export function isPaired(a: Groupable | undefined, b: Groupable | undefined): bo
 
 /** Mirrors backend services/supersets.py normalize_superset_groups: clears `superset_group` on
  * any contiguous run (in array order) shorter than two members -- a lone exercise is never "a
- * superset" by itself. `items` must already be in position order. Returns a new array. */
+ * superset" by itself -- and gives a later run a fresh, actually-unique group id if its number
+ * is one an earlier, unrelated run already used (unlinking/removing the middle of a chain of 5
+ * or more leaves exactly this: two separate runs still carrying the one id the whole original
+ * chain shared, which would otherwise read as one superset instead of two). `items` must
+ * already be in position order. Returns a new array. */
 export function normalizeSupersetGroups<T extends { superset_group: number | null }>(items: T[]): T[] {
   const next = items.slice()
+  const seenGroups = new Set<number>()
+  let nextGroup = Math.max(0, ...items.map((item) => item.superset_group ?? 0)) + 1
   let i = 0
   while (i < next.length) {
     const group = next[i].superset_group
@@ -26,7 +32,16 @@ export function normalizeSupersetGroups<T extends { superset_group: number | nul
     }
     let j = i
     while (j + 1 < next.length && next[j + 1].superset_group === group) j += 1
-    if (j === i) next[i] = { ...next[i], superset_group: null }
+    if (j === i) {
+      next[i] = { ...next[i], superset_group: null }
+    } else if (seenGroups.has(group)) {
+      const fresh = nextGroup
+      nextGroup += 1
+      for (let k = i; k <= j; k++) next[k] = { ...next[k], superset_group: fresh }
+      seenGroups.add(fresh)
+    } else {
+      seenGroups.add(group)
+    }
     i = j + 1
   }
   return next

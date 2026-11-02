@@ -23,7 +23,17 @@ def normalize_superset_groups(items) -> None:
     (in `items`' own order) of two or more members sharing the same group. A run of one (its
     only neighbor moved away, was removed, or was itself just unlinked) is dissolved -- a lone
     exercise is never "a superset" by itself; a run of any larger size is left alone, a "giant
-    set". `items` must already be in position order."""
+    set", *unless* its group number is one an earlier, unrelated run already used (unlinking or
+    removing one member out of the middle of a chain of 5 or more leaves exactly this: two
+    separate 2-or-longer runs that still carry the one id the whole original chain shared) --
+    that later run is reassigned a fresh, actually-unique id instead. Every consumer of
+    `superset_group` downstream (equalize_workout_superset_sets, sync_template_superset_sets,
+    routes/workouts.py's delete_set) groups by this value alone, with no adjacency check of its
+    own, so two unrelated supersets quietly sharing a number would otherwise be treated --
+    sets padded together, one's set deleted out of the other's completed history -- as one.
+    `items` must already be in position order."""
+    seen_groups: set[int] = set()
+    next_group = max((item.superset_group or 0 for item in items), default=0) + 1
     i, n = 0, len(items)
     while i < n:
         group = items[i].superset_group
@@ -35,6 +45,14 @@ def normalize_superset_groups(items) -> None:
             j += 1
         if j == i:  # a run of exactly one
             items[i].superset_group = None
+        elif group in seen_groups:
+            fresh = next_group
+            next_group += 1
+            for k in range(i, j + 1):
+                items[k].superset_group = fresh
+            seen_groups.add(fresh)
+        else:
+            seen_groups.add(group)
         i = j + 1
 
 
