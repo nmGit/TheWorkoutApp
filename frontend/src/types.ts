@@ -88,6 +88,9 @@ export interface WorkoutSet {
   position: number
   weight: number | null
   weight_unit: WeightUnit | null
+  /** This set's real load -- body weight + weight for a bodyweight_reps set, same as `weight`
+   * for any other. See backend WorkoutSet.effective_weight. */
+  effective_weight: number | null
   reps: number | null
   duration_seconds: number | null
   distance_meters: number | null
@@ -161,6 +164,11 @@ export interface WorkoutStrength {
   score: number | null
   /** Keyed by canonical muscle slug. Muscles not listed have no data. */
   muscles: Record<string, MuscleStrength>
+  /** Each exercise's own share of the workout score, in percentage points -- keyed by
+   * WorkoutExercise id (as a string, since JSON object keys always are). Additive: these sum
+   * to (approximately, for realistic score sizes) the percent the score itself represents. An
+   * exercise with nothing to add (no scored muscle) is left out rather than listed as 0. */
+  exercises: Record<string, number>
 }
 
 /** One completed workout's strength score. `score` is null during the warm-up period. */
