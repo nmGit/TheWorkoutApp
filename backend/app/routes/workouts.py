@@ -334,15 +334,20 @@ def update_workout_exercise(workout_id, workout_exercise_id):
         if body["superset_group"] is not None:
             raise ApiError("Use POST /workouts/:id/exercises/link to form a superset pair", 400)
         unlink(we.workout.exercises, we.id)
+        # Removing one exercise from the middle of a chain can leave either side (or both) down
+        # to a single, no-longer-"super" set -- unlink itself only clears this one item.
+        normalize_superset_groups(sorted(we.workout.exercises, key=lambda e: e.position))
     db.session.commit()
     return jsonify(serialize_workout(we.workout))
 
 
 @bp.post("/workouts/<int:workout_id>/exercises/link")
 def link_workout_exercises(workout_id):
-    """Pairs two of this workout's exercises into a superset -- forcing the same set count on
-    both from this point on (see services/supersets.py). They must be adjacent; the UI only ever
-    offers this between neighboring exercise cards, so a pairing is always visually a block."""
+    """Links two of this workout's exercises into a superset -- forcing the same set count on
+    every member from this point on (see services/supersets.py). Either one can already be part
+    of a chain; linking into an existing chain (or merging two chains together) extends it rather
+    than starting a new, separate pair. They must be adjacent; the UI only ever offers this
+    between neighboring exercise cards, so a superset is always visually one contiguous block."""
     workout = db.session.get(Workout, workout_id)
     if workout is None:
         raise ApiError("Workout not found", 404)
