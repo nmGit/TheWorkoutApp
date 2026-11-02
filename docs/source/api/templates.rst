@@ -16,11 +16,11 @@ Templates
    is this exercise's progressive-overload rep-range override (e.g.
    ``"8-12"``), not a literal per-set target — see
    :doc:`../features/progressive_overload`. ``superset_group``, set
-   identically on two adjacent entries, pairs them into a
-   :doc:`superset <../features/supersets>` — the server re-derives and
-   enforces valid pairing from this on every save (not just taking it as
-   given), including forcing both members' ``target_sets`` equal; see
-   :doc:`../data_flow`.
+   identically on two or more adjacent entries, links them into a
+   :doc:`superset <../features/supersets>` (any contiguous run, not just
+   a pair) — the server re-derives and enforces valid grouping from this
+   on every save (not just taking it as given), including forcing every
+   member's ``target_sets`` equal; see :doc:`../data_flow`.
 
 ``POST /api/templates/from-workout/:workoutId``
    Create a template from a completed workout, per

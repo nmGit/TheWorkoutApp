@@ -2,23 +2,28 @@ Exercise library
 ==================
 
 The exercise library is the shared vocabulary that templates, workouts,
-and analytics all key off of (``ExerciseTemplate.id``) — every set logged
-in the app's history points back to one row here, which is what makes
-"graph Bench Press over time" a simple query instead of a fuzzy text
-match.
+and analytics all key off of — every set logged in the app's history
+points back to one row here, which is what makes "graph Bench Press over
+time" a simple query instead of a fuzzy text match.
 
 Exercise templates
 --------------------
 
-Every exercise in the app **is** an ``ExerciseTemplate`` (see the
-:ref:`model-exercisetemplate` table) — either sourced from the bundled
-dataset submodules (RepDB and the original exercises-dataset, below) or
-authored by a user from scratch. There is no separate per-user exercise row that a
-template gets "created into" — picking a template from the catalog and
-logging a set against it are the same action on the same row. (This used
-to be a two-row design, with a nullable link between them; see
-:doc:`../review` for the bug that caused and :doc:`../data_migration` for
-the merge that fixed it.)
+Every exercise in the app is either an ``ExerciseTemplate`` (see the
+:ref:`model-exercisetemplate` table) — sourced from the bundled dataset
+submodules (RepDB and the original exercises-dataset, below) — or a
+``CustomExerciseTemplate`` (:ref:`model-customexercisetemplate`) —
+authored by a user from scratch. The two are separate tables, in separate
+databases (see :doc:`../data_model`'s "Database split" — the catalog is
+shared, common to every user; a custom exercise is this user's own), but
+present one seamless interface everywhere a reader of this page would
+notice: there's no create-or-reuse decision, no separate per-user
+exercise row a template gets "created into" first — picking either kind
+from the catalog and logging a set against it is the same single action.
+(This page's "catalog" has also, at different points in the project's
+history, meant a single merged table with a nullable per-user link, and
+later a single table with an ``is_custom`` flag — see :doc:`../review`
+for both changes and why each happened; neither is the current shape.)
 
 - **Browsing**: the exercise picker and the bottom-nav exercise library
   page both search the same catalog (dataset-sourced + custom templates
@@ -92,10 +97,14 @@ Custom exercises
 Users can add their own from the exercise picker's "Create '<query>'"
 affordance when a search has no match — required fields are just name,
 muscle group, and tracking type (see :ref:`data_model:Set tracking
-types`). This creates a custom ``ExerciseTemplate`` (``is_custom: true``)
-directly — the same kind of row a dataset-sourced exercise is, just
-without dataset metadata. Custom exercises behave identically to
-dataset-sourced ones everywhere else in the app.
+types`). This creates a ``CustomExerciseTemplate`` row (this user's own
+database — see :doc:`../data_model`'s "Database split"), not a dataset
+one; it has no dataset metadata (instructions, images, tips) to begin
+with, rather than having it stripped. Everywhere else in the app —
+browsing, logging, history, stats — a custom exercise behaves exactly
+like a dataset-sourced one; the one real difference beyond metadata is
+that a custom exercise is fully this user's own to edit or delete (see
+"Editing/deleting" below), where a dataset-sourced one isn't.
 
 Exercise detail
 ------------------
@@ -106,7 +115,9 @@ Exercise detail
    :align: center
 
 ``/exercises/:id`` combines two things, matching Strong's exercise detail
-screen:
+screen — ``?custom=1`` on the URL for a custom exercise, since an id alone
+doesn't say which table it's in (see :doc:`../data_model`'s "Database
+split"; every in-app link to this page already appends it correctly):
 
 - **History**: every past set for this exercise, most recent first,
   grouped by workout date.
@@ -115,13 +126,21 @@ screen:
 Editing/deleting
 ------------------
 
-Name, muscle group, equipment, and tracking type are all editable after
-creation, for both dataset-sourced and custom templates — editing never
-touches the dataset-only fields (instructions, image, ``body_part``,
-etc.), so there's nothing to accidentally corrupt. Deleting is blocked by
-the API if the template has any logged sets (see :ref:`data_model:Business
-rules`) — the UI surfaces this as "used in N workouts, can't delete"
-rather than a generic error — and separately blocked for any
-dataset-sourced template regardless of history, since deleting one would
-remove it from the catalog entirely rather than just from the user's own
-history.
+The only exercise edit the UI currently exposes, for either kind, is the
+"Note for every workout" field (:doc:`workout_logging`) — a dataset-sourced
+exercise's note is this user's own (:ref:`model-catalogexercisenote`, kept
+separate from the shared row it's attached to — see :doc:`../data_model`'s
+"Database split"), edited the exact same way a custom exercise's own
+``notes`` field is, so the distinction is invisible here. There is
+no "rename this exercise"/"delete this exercise" screen yet; the API
+underneath already supports the rest of a **custom** exercise's fields
+(name, muscle group, equipment, tracking type) being edited, and the
+exercise deleted outright (blocked with ``409`` if it has any logged
+sets — see :ref:`data_model:Business rules`), but nothing in the app
+calls those endpoints today. A **dataset-sourced** exercise's other
+fields (name, equipment, ...) were never user-editable even before this
+split, and now additionally can't be, by design — it's shared, common
+data every future user would see the same row of; the API's ``DELETE``
+for one always refuses, and its ``PATCH`` only ever accepts ``notes``.
+Removing or renaming a dataset exercise for real means fixing the
+underlying dataset submodule or ``seed_data/`` override and re-seeding.

@@ -42,9 +42,10 @@ Layout, top to bottom, matching Strong's proven structure:
 2. **Exercise blocks**, in order. Each block has a small toolbar in its
    header — exercise name on the left, then a "view exercise page" button
    (jumps to :doc:`exercise_library`'s detail screen — chart, PRs, and
-   full history — for that exercise), a "⋯" menu that includes pairing it
+   full history — for that exercise), a "⋯" menu that includes linking it
    with the next block into a :doc:`superset <supersets>` (shown by a
-   blue bar along the left edge of both once paired), and a "Remove"
+   blue bar along the left edge of every linked block, continuous across
+   the whole group once there are more than two), and a "Remove"
    button — plus:
 
    - A row per set: set number, weight input, reps input, a checkmark to
@@ -68,8 +69,8 @@ Layout, top to bottom, matching Strong's proven structure:
      single most common action in a workout); otherwise it gets a
      progressive-overload suggestion instead, the same as a set started
      from a template would. On a :doc:`superset <supersets>` member, it
-     also adds a set to the paired exercise, keeping both at the same
-     count; deleting a set does the same in reverse.
+     also adds a set to every other member of the group, keeping them
+     all at the same count; deleting a set does the same in reverse.
 
    The same header toolbar (view-exercise button included) appears on a
    completed workout's exercise blocks too — see

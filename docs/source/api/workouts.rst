@@ -63,24 +63,26 @@ Workouts
    Reorder the workout's exercise blocks. Body: ``{exercise_ids}``, the
    full list of this workout's ``WorkoutExercise`` ids in the new order —
    ``400`` if it doesn't contain exactly this workout's own exercises.
-   Can dissolve a :doc:`superset <../features/supersets>` pairing if the
-   new order splits a pair apart; see :doc:`../data_flow`.
+   Can dissolve a :doc:`superset <../features/supersets>` grouping if the
+   new order splits a chain apart; see :doc:`../data_flow`.
 
 ``PATCH /api/workouts/:id/exercises/:workoutExerciseId``
-   Edits what's specific to this exercise block: ``notes``, or un-pairing
-   it from a superset (``{superset_group: null}`` — clears both sides of
-   the pair). A non-null ``superset_group`` is rejected (``400``); use
-   the ``link`` endpoint below to *form* a pair, since that has to change
-   two exercises in one request.
+   Edits what's specific to this exercise block: ``notes``, or removing
+   it from a superset (``{superset_group: null}`` — clears just this one
+   exercise's own membership; the rest of its chain, if any, stays
+   linked). A non-null ``superset_group`` is rejected (``400``); use the
+   ``link`` endpoint below to *form or extend* a link, since that has to
+   change two exercises in one request.
 
 ``POST /api/workouts/:id/exercises/link``
-   Pairs two of this workout's exercises into a
+   Links two of this workout's exercises into a
    :doc:`superset <../features/supersets>`. Body: ``{first_id,
    second_id}`` (``WorkoutExercise`` ids) — ``400`` if either isn't in
    this workout, or if they aren't currently adjacent by ``position``.
-   Breaks either exercise's existing pairing first, allocates a fresh
-   group id, and equalizes both members' set counts immediately (padding
-   the shorter one). See :doc:`../data_flow`.
+   Joins whichever existing chain(s) either exercise already belongs to
+   (extending a chain, or merging two chains into one) rather than always
+   starting a fresh pair, and equalizes every member's set count
+   immediately (padding any shorter ones up). See :doc:`../data_flow`.
 
 ``DELETE /api/workouts/:id/exercises/:workoutExerciseId``
    Remove an exercise block (and its sets) from the workout.
@@ -117,9 +119,9 @@ Workouts
 
 ``DELETE /api/sets/:id``
    Remove a single set. If it belongs to a :doc:`superset <../features/supersets>`
-   member, also removes its pair's set at the same ``position``, if one
-   exists — a superset's two members always have the same set count, in
-   both directions (see :doc:`../data_flow`).
+   member, also removes every other member's set at the same
+   ``position``, if one exists — a superset's members always have the
+   same set count, in both directions (see :doc:`../data_flow`).
 
 ``GET /api/workouts/<id>/strength``
    Per-muscle strength against your usual, as described in

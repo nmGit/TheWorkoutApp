@@ -48,9 +48,10 @@ Template editor
     cues used on the active workout screen, and updates immediately as
     you change the set counts or rep range above — so you can see the
     effect of a change before starting a workout, not just after.
-  - The card's "⋯" menu includes pairing it with the next exercise into a
+  - The card's "⋯" menu includes linking it with the next exercise into a
     :doc:`superset <supersets>` (shown by a blue bar along the left edge
-    of both cards once paired) — forcing the two to the same working-set
+    of every linked card, continuous across the whole group once there
+    are more than two) — forcing every member to the same working-set
     count.
 
 - Reordering via drag handle; removing an exercise from the template does
