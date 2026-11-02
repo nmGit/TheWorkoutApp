@@ -36,8 +36,10 @@ Glossary
       weight, with no rest in between.
 
    Superset
-      Two adjacent exercises linked to be done back to back as one round,
-      forced to the same set count. See :doc:`features/supersets`.
+      Two or more adjacent exercises linked to be done back to back as
+      one round, forced to the same set count -- sometimes called a
+      "giant set" when there are more than two. See
+      :doc:`features/supersets`.
 
    Muscle recency
       How long since a muscle was last worked by a completed, counting

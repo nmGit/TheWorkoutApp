@@ -555,11 +555,11 @@ A saved, reusable shape for a workout ("routine" in Strong's terms).
        candidate for removal.
    * - superset_group
      - int, nullable
-     - Set, with an identical value, on exactly one other **adjacent**
-       (by ``position``) exercise to pair the two into a
-       :doc:`superset <features/supersets>`. Not a globally unique id —
-       only scoped to this template's own exercises. See
-       ``services/supersets.py``.
+     - Set, with an identical value, on every other **adjacent** (by
+       ``position``) exercise in the same contiguous run, to link them
+       into a :doc:`superset <features/supersets>` -- two or more, not
+       just a pair. Not a globally unique id -- only scoped to this
+       template's own exercises. See ``services/supersets.py``.
 
 .. _model-workout:
 
@@ -645,10 +645,10 @@ One exercise block within a workout.
    * - superset_group
      - int, nullable
      - Same meaning as ``TemplateExercise.superset_group`` above, scoped
-       to this workout instead: set identically on exactly one other
-       adjacent exercise to pair the two into a
-       :doc:`superset <features/supersets>`, forcing equal set counts
-       between them. See ``services/supersets.py``.
+       to this workout instead: set identically on every other adjacent
+       exercise in the same run to link them into a
+       :doc:`superset <features/supersets>` (two or more), forcing equal
+       set counts across it. See ``services/supersets.py``.
 
 .. _model-workoutset:
 

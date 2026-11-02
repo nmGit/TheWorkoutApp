@@ -3,7 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useExerciseTemplate } from '../api/exerciseTemplates'
 import { useExerciseStats } from '../api/stats'
 import { useCreateTemplateFromWorkout } from '../api/templates'
-import { useDeleteSet, useDeleteWorkout, useUpdateSet, useUpdateWorkout, useWorkout } from '../api/workouts'
+import {
+  useDeleteSet,
+  useDeleteWorkout,
+  useUpdateSet,
+  useUpdateWorkout,
+  useWorkout,
+  useWorkoutStrength,
+} from '../api/workouts'
 import { SetRow } from '../components/SetRow'
 import { ExerciseCard } from '../components/ExerciseCard'
 import { ExerciseList } from '../components/ExerciseList'
@@ -15,7 +22,7 @@ import { useAppSettings } from '../context/SettingsContext'
 import { formatDate, formatWorkoutDuration } from '../lib/format'
 import type { Workout, WorkoutExercise } from '../types'
 import { useUndo } from '../context/UndoContext'
-import { WorkoutMusclesHeader } from '../components/WorkoutMuscles'
+import { ContributionBadge, WorkoutMusclesHeader } from '../components/WorkoutMuscles'
 
 export function WorkoutDetailPage() {
   const { workoutId } = useParams()
@@ -98,6 +105,7 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
   const { deleteWithUndo, isHidden } = useUndo()
   const { data: exercise } = useExerciseTemplate(workoutExercise)
   const { data: stats } = useExerciseStats(workoutExercise)
+  const { data: strength } = useWorkoutStrength(workout.id)
   const [editingNote, setEditingNote] = useState<NoteKind | null>(null)
 
   const isPrWorkout = stats
@@ -110,6 +118,8 @@ function ExerciseSection({ workout, workoutExercise }: { workout: Workout; worko
       badges={
         <>
           {isPrWorkout && <Badge tone="accent">PR</Badge>}
+          {workoutExercise.tracking_type === 'bodyweight_reps' && <Badge>Bodyweight</Badge>}
+          <ContributionBadge pct={strength?.exercises[String(workoutExercise.id)]} />
           {exercise?.equipment && <Badge>{exercise.equipment}</Badge>}
         </>
       }

@@ -1,10 +1,13 @@
 Stats
 =====
 
-``GET /api/exercises/:id/stats``
-   Query params: ``metric`` (``max_weight``/``est_1rm``/``volume``/
-   ``distance``/``pace``, default depends on ``tracking_type``), ``range``
-   (``3m``/``6m``/``12m``/``all``, default ``all``).
+``GET /api/exercises/:id/stats``, ``GET /api/custom-exercises/:id/stats``
+   For a catalog exercise and this user's own custom one, respectively —
+   a bare id doesn't say which on its own (see :doc:`../data_model`'s
+   "Database split"), so these are two separate routes rather than one
+   that guesses. Query params: ``metric`` (``max_weight``/``est_1rm``/
+   ``volume``/``distance``/``pace``, default depends on ``tracking_type``),
+   ``range`` (``3m``/``6m``/``12m``/``all``, default ``all``).
 
    Response::
 

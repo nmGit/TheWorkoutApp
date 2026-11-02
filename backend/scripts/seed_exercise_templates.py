@@ -55,6 +55,7 @@ from app.services.exercise_templates import (
     equipment_type_for_repdb,
     muscle_group_name_for_body_part,
     muscle_group_name_for_repdb,
+    tracking_type_for_legacy,
     tracking_type_for_repdb,
 )
 
@@ -124,7 +125,7 @@ def seed_legacy(app, summary):
                 name=item["name"],
                 equipment=equipment_type_for(item.get("equipment")),
                 muscle_group_id=_muscle_group_id(muscle_group_name_for_body_part(body_part)),
-                tracking_type="cardio" if body_part == "cardio" else "weight_reps",
+                tracking_type=tracking_type_for_legacy(item),
             )
             db.session.add(template)
             created[item["name"].lower()] = template

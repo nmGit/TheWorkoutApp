@@ -113,8 +113,10 @@ def _last_performed(template):
         return {"date": local_date(we.workout.started_at).isoformat(), "summary": we.notes or "Done"}
     top = sets[0]
     parts = []
-    if top.weight is not None and top.reps is not None:
-        rounded = round(float(top.weight), 1)
+    if top.effective_weight is not None and top.reps is not None:
+        # effective_weight, not weight -- see WorkoutSet.effective_weight. Otherwise a
+        # bodyweight exercise with no added weight always showed "N x 0lbs" here.
+        rounded = round(float(top.effective_weight), 1)
         parts.append(f"{top.reps} x {rounded:g}{top.weight_unit or ''}")
     elif top.reps is not None:
         parts.append(f"{top.reps} reps")

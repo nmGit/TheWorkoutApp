@@ -213,6 +213,9 @@ def serialize_set(s):
         "position": s.position,
         "weight": _num(s.weight),
         "weight_unit": s.weight_unit,
+        # The real load -- body weight + weight for a bodyweight_reps set, same as `weight` for
+        # any other. See WorkoutSet.effective_weight.
+        "effective_weight": _num(s.effective_weight),
         "reps": s.reps,
         "duration_seconds": s.duration_seconds,
         "distance_meters": _num(s.distance_meters),

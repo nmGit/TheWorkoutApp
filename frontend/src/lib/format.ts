@@ -71,14 +71,19 @@ export function setSummary(
   set: {
     weight: number | null
     weight_unit: WeightUnit | null
+    effective_weight?: number | null
     reps: number | null
     duration_seconds: number | null
     distance_meters: number | null
   },
   displayUnit: WeightUnit,
 ): string {
-  if (set.weight !== null && set.reps !== null) {
-    const converted = convertWeight(set.weight, set.weight_unit, displayUnit)
+  // effective_weight, not weight -- see backend WorkoutSet.effective_weight. Otherwise a
+  // bodyweight exercise with no added weight always showed "N × 0lbs" here. Optional only so
+  // call sites that don't have it (e.g. an unsaved/local set) still fall back to weight.
+  const shown = set.effective_weight ?? set.weight
+  if (shown !== null && set.reps !== null) {
+    const converted = convertWeight(shown, set.weight_unit, displayUnit)
     return `${set.reps} × ${formatWeight(Math.round(converted * 10) / 10, displayUnit)}`
   }
   if (set.reps !== null) return `${set.reps} reps`

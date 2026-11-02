@@ -116,49 +116,6 @@ def test_first_workouts_have_no_score_and_then_the_baseline_compares(client, app
     )
 
 
-def test_top_sets_and_warmups_and_reps_cap(app):
-    from app.services.strength import workout_muscle_values
-
-    with app.app_context():
-        bench = _bench()
-        db.session.add(bench)
-        db.session.flush()
-        wid = _workout(
-            bench,
-            0,
-            [
-                (100, 5),
-                (110, 5),
-                (120, 5),
-                (130, 5),  # the top three are 130, 120, 110
-                {"weight": 200, "reps": 5, "is_warmup": True},  # warm-up: ignored
-                {"weight": 200, "reps": 5, "is_dropset": True},  # drop set: ignored
-                {"weight": 90, "reps": 20},  # over the rep cap: ignored
-                {"weight": 300, "reps": 5, "completed": False},  # not completed: ignored
-            ],
-        )
-        db.session.commit()
-        workout = db.session.get(Workout, wid)
-        values = workout_muscle_values(workout)
-
-    # The bench's chest share is 1 / (1 + 0.5) = 2/3; the top three credited sets are the best three.
-    top = [_e1rm(130, 5), _e1rm(120, 5), _e1rm(110, 5)]
-    assert values["pectoralis_major"] == pytest.approx(sum(top) / 3 * 2 / 3)
-
-
-def test_pounds_are_converted_before_scoring(app):
-    from app.services.strength import workout_muscle_values
-
-    with app.app_context():
-        bench = _bench()
-        db.session.add(bench)
-        db.session.flush()
-        wid = _workout(bench, 0, [{"weight": 220.462262, "reps": 5, "weight_unit": "lbs"}])
-        db.session.commit()
-        values = workout_muscle_values(db.session.get(Workout, wid))
-    assert values["pectoralis_major"] == pytest.approx(_e1rm(100, 5) * 2 / 3, rel=1e-4)
-
-
 def test_planned_exercise_is_pending_and_not_scored(client, app):
     with app.app_context():
         bench = _bench()
@@ -177,34 +134,6 @@ def test_planned_exercise_is_pending_and_not_scored(client, app):
 
 def test_unknown_workout_is_404(client):
     assert client.get("/api/workouts/9999/strength").status_code == 404
-
-
-def test_series_matches_scoring_each_workout_on_its_own_history(app):
-    from app.services.strength import completed_workouts, score_series, score_workout, history_before
-
-    with app.app_context():
-        bench = _bench()
-        db.session.add(bench)
-        db.session.flush()
-        for day, kg in enumerate([100, 105, 98, 120, 111, 125, 130]):
-            _workout(bench, day, [(kg, 5)])
-        db.session.commit()
-
-        workouts = completed_workouts()
-        series = score_series(workouts)
-        for workout, point in zip(workouts, series):
-            expected = score_workout(workout, history_before(workout))
-            if expected["score"] is None:
-                assert point["score"] is None
-            else:
-                assert point["score"] == pytest.approx(expected["score"])
-            assert point["muscles"].keys() == expected["muscles"].keys()
-            for slug, status in expected["muscles"].items():
-                assert point["muscles"][slug]["status"] == status["status"]
-                if status["ratio"] is None:
-                    assert point["muscles"][slug]["ratio"] is None
-                else:
-                    assert point["muscles"][slug]["ratio"] == pytest.approx(status["ratio"])
 
 
 def test_bodyweight_exercise_counts_using_logged_body_weight(client, app):
@@ -231,20 +160,25 @@ def test_bodyweight_exercise_counts_using_logged_body_weight(client, app):
     assert fourth["muscles"]["pectoralis_major"]["ratio"] > 1.0
 
 
-def test_bodyweight_exercise_adds_any_logged_extra_weight_on_top(app):
-    from app.services.strength import workout_muscle_values
-
+def test_bodyweight_exercise_adds_any_logged_extra_weight_on_top(client, app):
     with app.app_context():
         pushup = _pushup()
         db.session.add(pushup)
         db.session.add(BodyweightEntry(recorded_at=date(2026, 1, 1), weight=80, unit="kg"))
         db.session.flush()
-        # A 10kg weighted vest on top of 80kg body weight.
-        wid = _workout(pushup, 0, [(10, 8)])
+        # Same reps throughout -- only the added weight changes, so any movement in the ratio
+        # has to come from that added weight actually landing on top of body weight as load.
+        ids = [
+            _workout(pushup, 0, [(0, 8)]),
+            _workout(pushup, 1, [(0, 8)]),
+            _workout(pushup, 2, [(0, 8)]),
+            _workout(pushup, 3, [(10, 8)]),  # a 10kg weighted vest on top of 80kg body weight
+        ]
         db.session.commit()
-        values = workout_muscle_values(db.session.get(Workout, wid))
 
-    assert values["pectoralis_major"] == pytest.approx(_e1rm(90, 8) * 2 / 3)
+    fourth = client.get(f"/api/workouts/{ids[3]}/strength").get_json()
+    assert fourth["muscles"]["pectoralis_major"]["status"] == "scored"
+    assert fourth["muscles"]["pectoralis_major"]["ratio"] > 1.0
 
 
 def test_bodyweight_exercise_is_unscored_without_any_logged_body_weight(client, app):

@@ -70,10 +70,11 @@ def _aggregate_metric(sets: list[WorkoutSet], metric: str, weight_unit: str, dis
         return None
 
     if metric == "max_weight":
+        # effective_weight, not weight -- see WorkoutSet.effective_weight.
         values = [
-            convert_weight(float(s.weight), s.weight_unit, weight_unit)
+            convert_weight(float(s.effective_weight), s.weight_unit, weight_unit)
             for s in working_sets
-            if s.weight is not None
+            if s.effective_weight is not None
         ]
         return max(values) if values else None
 
@@ -150,8 +151,9 @@ def _strength_prs(rows, weight_unit: str):
             continue
         session_date = _session_date(w)
 
-        if s.weight is not None:
-            weight = convert_weight(float(s.weight), s.weight_unit, weight_unit)
+        if s.effective_weight is not None:
+            # effective_weight, not weight -- see WorkoutSet.effective_weight.
+            weight = convert_weight(float(s.effective_weight), s.weight_unit, weight_unit)
             if best_weight is None or weight > best_weight["value"]:
                 best_weight = {"value": weight, "date": session_date, "workout_id": w.id}
 

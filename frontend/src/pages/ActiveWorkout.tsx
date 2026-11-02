@@ -12,6 +12,7 @@ import {
   useUpdateSet,
   useUpdateWorkout,
   useUpdateWorkoutExercise,
+  useWorkoutStrength,
 } from '../api/workouts'
 import { useExerciseHistory } from '../api/exerciseTemplates'
 import { useTemplate, useUpdateTemplate, type TemplateExerciseInput } from '../api/templates'
@@ -20,7 +21,7 @@ import { ExercisePicker } from '../components/ExercisePicker'
 import { NameEditor } from '../components/NameEditor'
 import { SetRow } from '../components/SetRow'
 import { SupersetBar } from '../components/SupersetBar'
-import { Button, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
+import { Badge, Button, DragHandle, EmptyState, LoadingState, ViewExerciseButton } from '../components/ui'
 import { useAppSettings } from '../context/SettingsContext'
 import { useGlobalRestTimer } from '../context/RestTimerContext'
 import { useDragReorder } from '../hooks/useDragReorder'
@@ -32,7 +33,7 @@ import { progressionBaseline } from '../lib/progressionTone'
 import { isPaired } from '../lib/supersets'
 import type { ExerciseTemplate, Workout, WorkoutExercise, WorkoutSet } from '../types'
 import { useUndo } from '../context/UndoContext'
-import { WorkoutMusclesHeader } from '../components/WorkoutMuscles'
+import { ContributionBadge, WorkoutMusclesHeader } from '../components/WorkoutMuscles'
 import { ExerciseNotesPanel, noteMenuItems, type NoteKind } from '../components/ExerciseNotes'
 
 export function ActiveWorkoutPage() {
@@ -198,7 +199,11 @@ export function ActiveWorkoutPage() {
           const linkedBelow = isPaired(we, next)
           return (
             <div className="flex items-stretch gap-2">
-              <SupersetBar linkedAbove={isPaired(workout.exercises[i - 1], we)} linkedBelow={linkedBelow} />
+              <SupersetBar
+                linkedAbove={isPaired(workout.exercises[i - 1], we)}
+                linkedBelow={linkedBelow}
+                gapPx={12 /* ExerciseList's default space-y-3 */}
+              />
               <div className="min-w-0 flex-1">
                 <ExerciseBlock
                   workout={workout}
@@ -284,6 +289,8 @@ function ExerciseBlock({
   const { deleteWithUndo, isHidden } = useUndo()
   const [editingNote, setEditingNote] = useState<NoteKind | null>(null)
   const { data: history } = useExerciseHistory(workoutExercise)
+  // Same query WorkoutMusclesHeader already made for this workout -- cached, not refetched.
+  const { data: strength } = useWorkoutStrength(workout.id)
 
   const previousSets: WorkoutSet[] = history?.items.find((item) => item.workout_id !== workout.id)?.sets ?? []
   const previousBaseline = progressionBaseline(previousSets)
@@ -327,6 +334,12 @@ function ExerciseBlock({
       dragging={isDragging}
       title={workoutExercise.exercise_name}
       leading={<DragHandle handleProps={handleProps} isDragging={isDragging} />}
+      badges={
+        <>
+          {trackingType === 'bodyweight_reps' && <Badge>Bodyweight</Badge>}
+          <ContributionBadge pct={strength?.exercises[String(workoutExercise.id)]} />
+        </>
+      }
       actions={
         <>
           <ViewExerciseButton
@@ -342,8 +355,8 @@ function ExerciseBlock({
                     {
                       label: supersetToggle.linkedBelow ? 'Remove from superset' : 'Superset with next',
                       title: supersetToggle.linkedBelow
-                        ? 'Unlink this exercise and the next one'
-                        : 'Pair this exercise with the next one, forcing the same set count',
+                        ? 'Remove this exercise from its superset'
+                        : 'Link with the next exercise, forcing the same set count -- extends an existing superset into a giant set if either one is already in one',
                       onClick: supersetToggle.onToggle,
                     },
                   ]

@@ -12,6 +12,10 @@ How it works, in short:
   exercise's share for that muscle times its counting sets. The average is pulled
   towards zero by SHRINKAGE, so thin evidence gives a small change.
 - Each muscle reports its evidence: the total weight behind its change.
+- Each exercise (specifically: each exercise *block* in this workout, by WorkoutExercise
+  id) also gets a share of the workout score itself, in percentage points -- see the
+  `exercises` dict V2Series.step builds, and docs/source/features/strength_score.rst's
+  "Per-exercise contribution" section.
 """
 
 import math
@@ -27,7 +31,6 @@ from app.services.strength import (
     _estimated_one_rm_kg,
     _is_hold_set,
     _planned_muscles,
-    body_weight_kg_on,
     history_before,
     muscle_shares,
 )
@@ -51,21 +54,20 @@ def rep_weight(reps: int) -> float:
     return max(0.5, 1 - 0.5 * (reps - FULL_WEIGHT_REPS) / (MAX_REPS - FULL_WEIGHT_REPS))
 
 
-def _is_load_set(s, *, bodyweight: bool = False) -> bool:
-    if not (
+def _is_load_set(s) -> bool:
+    # effective_weight already is body weight + added weight for a bodyweight_reps set (see
+    # WorkoutSet.effective_weight), so there's no separate bodyweight case here any more --
+    # the ordinary 0 added weight still leaves a real, positive effective_weight.
+    return (
         s.completed
         and not s.is_warmup
         and not s.is_dropset
-        and s.weight is not None
+        and s.effective_weight is not None
+        and float(s.effective_weight) > 0
         and s.reps is not None
         and 1 <= s.reps <= MAX_REPS
         and s.weight_unit in ("lbs", "kg")
-    ):
-        return False
-    # weight 0 on a plain weight_reps set logged nothing real, but it's the ordinary value
-    # for a bodyweight_reps set's *added* weight (most never add any) -- body weight itself
-    # is the real load there, so 0 doesn't disqualify the set.
-    return bodyweight or float(s.weight) > 0
+    )
 
 
 def generated_rir(reps: int, weight_kg: float, reference_e1rm: float) -> float:
@@ -77,6 +79,8 @@ def generated_rir(reps: int, weight_kg: float, reference_e1rm: float) -> float:
 
 @dataclass
 class ExerciseSession:
+    workout_exercise_id: int  # this specific block in this workout -- not the same as
+    # exercise_ref below when an exercise appears in two separate blocks of one workout
     exercise_ref: tuple[str, int]  # see models/exercise_reference.py -- collision-free across
     # the catalog/custom split, unlike a bare exercise id
     kind: str
@@ -91,30 +95,19 @@ def _exercise_sessions(
     workout: Workout, references: dict[tuple[str, int], float]
 ) -> list[ExerciseSession]:
     out = []
-    body_weight_kg: float | None = None
-    body_weight_checked = False
     for we in workout.exercises:
         ex = we.exercise
         if ex is None:
             continue
         shares = muscle_shares(ex)
         if ex.tracking_type in ("weight_reps", "bodyweight_reps"):
-            is_bodyweight = ex.tracking_type == "bodyweight_reps"
-            if is_bodyweight and not body_weight_checked:
-                # Once per workout, not per exercise -- body weight doesn't change within a
-                # session, and most workouts have no bodyweight exercise at all.
-                body_weight_kg = body_weight_kg_on(workout.started_at)
-                body_weight_checked = True
-            if is_bodyweight and body_weight_kg is None:
-                continue  # never logged a body weight -- nothing to credit this session with
             ref = references.get(ex.ref)
             scored = []
             hard = 0
             for s in we.sets:
-                if not _is_load_set(s, bodyweight=is_bodyweight):
+                if not _is_load_set(s):
                     continue
-                added_kg = convert_weight(float(s.weight), s.weight_unit, "kg")
-                w = body_weight_kg + added_kg if is_bodyweight else added_kg
+                w = convert_weight(float(s.effective_weight), s.weight_unit, "kg")
                 e = _estimated_one_rm_kg(w, s.reps)
                 scored.append((e, rep_weight(s.reps)))
                 if ref is not None and generated_rir(s.reps, w, ref) <= 3:
@@ -123,7 +116,9 @@ def _exercise_sessions(
                 continue
             top = sorted(scored, key=lambda c: c[0], reverse=True)[:TOP_SETS]
             value = sum(e * rw for e, rw in top) / sum(rw for _, rw in top)
-            out.append(ExerciseSession(ex.ref, LOAD, value, shares, len(scored), max(e for e, _ in scored), hard))
+            out.append(
+                ExerciseSession(we.id, ex.ref, LOAD, value, shares, len(scored), max(e for e, _ in scored), hard)
+            )
         elif ex.tracking_type == "time":
             group = ex.app_muscle_group.name if ex.app_muscle_group else None
             if group in HOLD_EXCLUDED_GROUPS:
@@ -131,7 +126,7 @@ def _exercise_sessions(
             holds = sorted((float(s.duration_seconds) for s in we.sets if _is_hold_set(s)), reverse=True)[:TOP_SETS]
             if not holds:
                 continue
-            out.append(ExerciseSession(ex.ref, HOLD, sum(holds) / len(holds), shares, len(holds), None, 0))
+            out.append(ExerciseSession(we.id, ex.ref, HOLD, sum(holds) / len(holds), shares, len(holds), None, 0))
     return out
 
 
@@ -166,7 +161,7 @@ class V2Series:
         refs = {ref: self.reference(ref) for ref in self.best_history}
         sessions = _exercise_sessions(workout, {k: v for k, v in refs.items() if v is not None})
 
-        # muscle -> [(log change, evidence weight)]
+        # muscle -> [(workout_exercise_id, log change, evidence weight)]
         terms = defaultdict(list)
         set_aside = set()  # sessions judged to be entry errors
         for sess in sessions:
@@ -184,7 +179,7 @@ class V2Series:
                 set_aside.add(id(sess))
                 continue
             for slug, share in sess.muscle_weights.items():
-                terms[slug].append((change, share * sess.counting_sets))
+                terms[slug].append((sess.workout_exercise_id, change, share * sess.counting_sets))
 
         # Fold this workout into the history, after scoring it. Set-aside sessions are skipped.
         for sess in sessions:
@@ -196,9 +191,9 @@ class V2Series:
 
         worked = {slug for sess in sessions for slug in sess.muscle_weights}
         muscles = {}
-        for slug, pairs in terms.items():
-            evidence = sum(e for _, e in pairs)
-            change = sum(c * e for c, e in pairs) / (evidence + SHRINKAGE)
+        for slug, triples in terms.items():
+            evidence = sum(e for _, _, e in triples)
+            change = sum(c * e for _, c, e in triples) / (evidence + SHRINKAGE)
             muscles[slug] = {"status": "scored", "ratio": math.exp(change), "evidence": round(evidence, 2)}
         for slug in worked - set(muscles):
             muscles[slug] = {"status": "no_baseline", "ratio": None, "evidence": 0.0}
@@ -209,14 +204,36 @@ class V2Series:
 
         scored = [m["ratio"] for m in muscles.values() if m["status"] == "scored"]
         score = None
+        exercises: dict[int, float] = {}
         if scored:
             score = math.exp(sum(math.log(r) for r in scored) / len(scored))
+            # Each exercise's share of the *workout* score, in percentage points -- additive in
+            # the same log space the geometric means above are already computed in, so summing
+            # every exercise's contribution here reproduces log(score) exactly (and, for the
+            # single-digit-percent swings this score actually produces, is close enough to
+            # (score - 1) * 100, the percent the workout header itself shows, that the two read
+            # as "the same number split up"). A muscle only counts here if it's "scored" --
+            # dividing by the same len(scored) used for the geometric mean above is what makes
+            # this decomposition of log(score) exact; a muscle with no baseline yet (or merely
+            # planned) contributes nothing, same as it doesn't move the score itself.
+            contributions: dict[int, float] = defaultdict(float)
+            for slug in muscles:
+                if muscles[slug]["status"] != "scored":
+                    continue
+                triples = terms[slug]
+                total_evidence = sum(e for _, _, e in triples)
+                denom = total_evidence + SHRINKAGE
+                for we_id, c, e in triples:
+                    contributions[we_id] += (e * c / denom) / len(scored)
+            exercises = {we_id: round(c * 100, 2) for we_id, c in contributions.items() if c != 0}
+
         return {
             "workout_id": workout.id,
             "started_at": workout.started_at,
             "template_id": workout.template_id,
             "score": score,
             "muscles": muscles,
+            "exercises": exercises,
         }
 
 
@@ -230,4 +247,4 @@ def strength_for_workout(workout: Workout) -> dict:
     """The generated strength data for one workout, from the completed workouts before it.
     Works for a workout still in progress, which is never part of its own history."""
     point = score_series_v2(history_before(workout) + [workout])[-1]
-    return {"score": point["score"], "muscles": point["muscles"]}
+    return {"score": point["score"], "muscles": point["muscles"], "exercises": point["exercises"]}

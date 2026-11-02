@@ -86,18 +86,23 @@ Tech stack
      - Relational model with real joins (see :doc:`data_model`), versioned
        schema migrations from day one.
    * - Database
-     - SQLite by default, Postgres-compatible
-     - SQLite is zero-ops and plenty fast for a single-user self-hosted
-       app; the schema avoids SQLite-incompatible features so switching
-       ``DATABASE_URL`` to Postgres later is a config change, not a
-       rewrite.
+     - SQLite by default, Postgres-compatible — two of them
+     - This user's own data and the shared exercise catalog are two
+       separate databases (see :doc:`data_model`'s "Database split"),
+       each its own ``DATABASE_URL``/``CATALOG_DATABASE_URL``. SQLite is
+       zero-ops and plenty fast for a single-user self-hosted app; the
+       schema avoids SQLite-incompatible features so switching either to
+       Postgres later is a config change, not a rewrite.
 
 Non-goals
 ---------
 
 Explicitly out of scope for v1, to keep the product coherent:
 
-- Multi-user accounts, social features, sharing workouts.
+- Multi-user accounts, social features, sharing workouts. (The database
+  is already split along the line a future account system would need —
+  see :doc:`data_model`'s "Database split" — but there's no login or
+  per-user provisioning yet; this is groundwork, not the feature.)
 - Nutrition/macro tracking.
 - Wearable/device sync (Apple Watch, Garmin, etc.).
 - Offline-first / PWA installability (may come later; not v1).

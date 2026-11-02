@@ -118,8 +118,9 @@ one non-JSON, non-SPA route — static HTML (see "Documentation" below).
      - Responsibility
    * - ``strength.py``
      - Shared pieces of strength scoring: muscle shares, e1RM, which sets
-       count. Also the retired first-generation score method, kept for
-       comparison (``scripts/evaluate_generated.py``).
+       count, and the completed-workouts/history queries the live engine
+       replays against. Scores nothing on its own -- see
+       ``generated_v2.py``.
    * - ``generated_v2.py``
      - The live strength-scoring method: per-exercise baselines, outlier
        rejection, shrinkage. See :doc:`features/strength_score` and
@@ -135,9 +136,10 @@ one non-JSON, non-SPA route — static HTML (see "Documentation" below).
        applying progressive overload to the working sets. See
        :doc:`features/progressive_overload`.
    * - ``supersets.py``
-     - Pairing two adjacent exercises into a
-       :doc:`superset <features/supersets>`, keeping that pairing valid
-       under reordering, and forcing equal set counts between them. Used
+     - Linking adjacent exercises into a
+       :doc:`superset <features/supersets>` (a chain of two or more),
+       keeping that grouping valid under reordering, and forcing equal
+       set counts across it. Used
        by both ``routes/templates.py`` and ``routes/workouts.py``.
    * - ``muscle_catalog.py``
      - Resolves a dataset's raw muscle wording to a canonical ``Muscle``

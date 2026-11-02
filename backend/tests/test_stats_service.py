@@ -4,25 +4,44 @@ from app.services.stats import compute_streak_weeks
 from app.services.units import convert_weight, meters_to_unit
 
 
-def test_epley_1rm_formula():
-    from app.models.workout import WorkoutSet
+def _make_weight_reps_set(app, **set_kwargs):
+    """A flushed WorkoutSet against a weight_reps exercise -- effective_weight is set
+    automatically by the before_insert event (see WorkoutSet.effective_weight), same as it
+    would for a set logged through the API. A bare, never-flushed WorkoutSet() no longer
+    computes a usable estimated_one_rm()/volume(), since those read effective_weight."""
+    from app.extensions import db
+    from app.models.exercise_template import ExerciseTemplate
+    from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 
-    s = WorkoutSet(weight=200, reps=5, is_warmup=False)
+    with app.app_context():
+        bench = ExerciseTemplate(name="bench press", tracking_type="weight_reps")
+        db.session.add(bench)
+        db.session.flush()
+        workout = Workout(name="w", started_at=datetime(2026, 1, 5, 9, 0, 0))
+        db.session.add(workout)
+        db.session.flush()
+        we = WorkoutExercise(workout_id=workout.id, exercise_id=bench.id, position=0)
+        db.session.add(we)
+        db.session.flush()
+        s = WorkoutSet(workout_exercise_id=we.id, position=0, weight_unit="kg", **set_kwargs)
+        db.session.add(s)
+        db.session.flush()
+        return s
+
+
+def test_epley_1rm_formula(app):
+    s = _make_weight_reps_set(app, weight=200, reps=5, is_warmup=False)
     # Epley: 200 * (1 + 5/30) = 233.33...
     assert round(s.estimated_one_rm(), 2) == round(200 * (1 + 5 / 30.0), 2)
 
 
-def test_1rm_single_rep_is_raw_weight():
-    from app.models.workout import WorkoutSet
-
-    s = WorkoutSet(weight=225, reps=1, is_warmup=False)
+def test_1rm_single_rep_is_raw_weight(app):
+    s = _make_weight_reps_set(app, weight=225, reps=1, is_warmup=False)
     assert s.estimated_one_rm() == 225.0
 
 
-def test_1rm_excludes_warmups():
-    from app.models.workout import WorkoutSet
-
-    s = WorkoutSet(weight=100, reps=10, is_warmup=True)
+def test_1rm_excludes_warmups(app):
+    s = _make_weight_reps_set(app, weight=100, reps=10, is_warmup=True)
     assert s.estimated_one_rm() is None
 
 

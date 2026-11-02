@@ -41,11 +41,15 @@ export function toneTextClass(t: Tone): string {
  * only on the rows where that position's old value happened to differ from the new, uniform
  * plan). */
 export function progressionBaseline(previousSets: WorkoutSet[]): WorkoutSet | undefined {
-  const working = previousSets.filter((s) => !s.is_warmup && !s.is_dropset && s.weight != null)
+  // effective_weight, not weight, picks the "heaviest" set -- same as sets_plan.py's
+  // progress_working -- so a bodyweight set (whose own `weight` is just the usually-zero
+  // added part) can still be picked correctly over, say, a weaker set with some added
+  // weight. See backend WorkoutSet.effective_weight.
+  const working = previousSets.filter((s) => !s.is_warmup && !s.is_dropset && s.effective_weight != null)
   return working.reduce<WorkoutSet | undefined>((top, s) => {
     if (!top) return s
-    const topKg = convertWeight(Number(top.weight), top.weight_unit ?? 'lbs', 'kg')
-    const sKg = convertWeight(Number(s.weight), s.weight_unit ?? 'lbs', 'kg')
+    const topKg = convertWeight(Number(top.effective_weight), top.weight_unit ?? 'lbs', 'kg')
+    const sKg = convertWeight(Number(s.effective_weight), s.weight_unit ?? 'lbs', 'kg')
     return sKg > topKg ? s : top
   }, undefined)
 }

@@ -70,7 +70,8 @@ def test_non_contiguous_superset_group_is_dissolved(client, bench_press, chest_g
     assert [e["superset_group"] for e in exercises] == [None, None, None]
 
 
-def test_three_in_a_row_with_the_same_group_keeps_only_the_first_pair(client, bench_press, chest_group):
+def test_three_in_a_row_with_the_same_group_is_a_giant_set(client, bench_press, chest_group):
+    """A contiguous run of any size sharing a group is a valid superset -- not just pairs."""
     incline = _second_exercise(chest_group)
     flye = _second_exercise(chest_group, name="Cable Flye")
 
@@ -86,7 +87,7 @@ def test_three_in_a_row_with_the_same_group_keeps_only_the_first_pair(client, be
         },
     )
     exercises = resp.get_json()["exercises"]
-    assert [e["superset_group"] for e in exercises] == [1, 1, None]
+    assert [e["superset_group"] for e in exercises] == [1, 1, 1]
 
 
 def test_updating_a_template_exercise_in_a_superset_resyncs_its_siblings(client, bench_press, chest_group):
@@ -166,7 +167,9 @@ def test_linking_workout_exercises_equalizes_set_counts(client, bench_press, che
     assert groups[we1] is not None and groups[we1] == groups[we2]
 
 
-def test_linking_a_new_pair_breaks_the_old_one(client, bench_press, chest_group):
+def test_linking_a_third_exercise_extends_the_chain_into_a_giant_set(client, bench_press, chest_group):
+    """Linking we2-we3 when we1-we2 are already linked joins all three into one superset
+    (a "giant set") instead of breaking we1 off -- see services/supersets.py link_pair."""
     incline = _second_exercise(chest_group)
     flye = _second_exercise(chest_group, name="Cable Flye")
     workout = client.post("/api/workouts", json={}).get_json()
@@ -177,8 +180,49 @@ def test_linking_a_new_pair_breaks_the_old_one(client, bench_press, chest_group)
 
     resp = _link(client, workout["id"], we2, we3)
     groups = {e["id"]: e["superset_group"] for e in resp.get_json()["exercises"]}
-    assert groups[we1] is None  # its old partner moved on
-    assert groups[we2] is not None and groups[we2] == groups[we3]
+    assert groups[we1] is not None
+    assert groups[we1] == groups[we2] == groups[we3]
+
+
+def test_linking_two_existing_chains_merges_them(client, bench_press, chest_group):
+    """Linking the last member of one chain to the first member of another merges both into a
+    single superset, rather than requiring either side to already be unlinked."""
+    incline = _second_exercise(chest_group)
+    flye = _second_exercise(chest_group, name="Cable Flye")
+    lateral = _second_exercise(chest_group, name="Lateral Raise")
+    workout = client.post("/api/workouts", json={}).get_json()
+    we1 = _add_exercise(client, workout["id"], bench_press.id)
+    we2 = _add_exercise(client, workout["id"], incline.id)
+    we3 = _add_exercise(client, workout["id"], flye.id)
+    we4 = _add_exercise(client, workout["id"], lateral.id)
+    _link(client, workout["id"], we1, we2)
+    _link(client, workout["id"], we3, we4)
+
+    resp = _link(client, workout["id"], we2, we3)
+    groups = {e["id"]: e["superset_group"] for e in resp.get_json()["exercises"]}
+    assert groups[we1] == groups[we2] == groups[we3] == groups[we4]
+    assert groups[we1] is not None
+
+
+def test_removing_the_middle_of_a_chain_splits_it(client, bench_press, chest_group):
+    """Removing (not deleting) the middle exercise of a 3-exercise giant set from the superset
+    splits the chain in two, rather than dissolving the whole thing -- see
+    services/supersets.py unlink/normalize_superset_groups."""
+    incline = _second_exercise(chest_group)
+    flye = _second_exercise(chest_group, name="Cable Flye")
+    workout = client.post("/api/workouts", json={}).get_json()
+    we1 = _add_exercise(client, workout["id"], bench_press.id)
+    we2 = _add_exercise(client, workout["id"], incline.id)
+    we3 = _add_exercise(client, workout["id"], flye.id)
+    _link(client, workout["id"], we1, we2)
+    _link(client, workout["id"], we2, we3)
+
+    resp = client.patch(f"/api/workouts/{workout['id']}/exercises/{we2}", json={"superset_group": None})
+    groups = {e["id"]: e["superset_group"] for e in resp.get_json()["exercises"]}
+    # we2 is on its own now; we1 and we3 are no longer *contiguous* (we2 sits between them,
+    # ungrouped), so each is down to a single member too, even though they still technically
+    # share the old group id -- normalize_superset_groups dissolves both.
+    assert groups[we1] is None and groups[we2] is None and groups[we3] is None
 
 
 def test_unlinking_clears_both_sides(client, bench_press, chest_group):
@@ -265,6 +309,24 @@ def test_removing_the_middle_of_a_superset_is_fine(client, bench_press, chest_gr
     assert client.delete(f"/api/workouts/{workout['id']}/exercises/{we1}").status_code == 204
     final = client.get(f"/api/workouts/{workout['id']}").get_json()
     groups = {e["id"]: e["superset_group"] for e in final["exercises"]}
+    assert groups[we2] is not None and groups[we2] == groups[we3]
+
+
+def test_removing_one_end_of_a_chain_leaves_the_rest_linked(client, bench_press, chest_group):
+    """Removing the *first* member of a 3-exercise giant set leaves the other two still a
+    valid (if now shorter) superset, unlike removing the middle one."""
+    incline = _second_exercise(chest_group)
+    flye = _second_exercise(chest_group, name="Cable Flye")
+    workout = client.post("/api/workouts", json={}).get_json()
+    we1 = _add_exercise(client, workout["id"], bench_press.id)
+    we2 = _add_exercise(client, workout["id"], incline.id)
+    we3 = _add_exercise(client, workout["id"], flye.id)
+    _link(client, workout["id"], we1, we2)
+    _link(client, workout["id"], we2, we3)
+
+    resp = client.patch(f"/api/workouts/{workout['id']}/exercises/{we1}", json={"superset_group": None})
+    groups = {e["id"]: e["superset_group"] for e in resp.get_json()["exercises"]}
+    assert groups[we1] is None
     assert groups[we2] is not None and groups[we2] == groups[we3]
 
 

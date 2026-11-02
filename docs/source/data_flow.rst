@@ -16,10 +16,13 @@ Starting a workout from a template
 2. Create the ``Workout`` (name copied from the template) and, for each
    ``TemplateExercise`` in position order, a ``WorkoutExercise``.
 3. For each one, ``services/sets_plan.py:plan_sets(template_exercise)``.
-   ``plan_sets`` only reads ``exercise_id``/``target_reps``/``warmup_sets``/
-   ``target_sets``/``drop_sets`` off whatever it's given, so a caller with
-   no ``TemplateExercise`` (generated workouts, step 10 below) passes a
-   plain ``SetPlanSpec`` with the same fields instead:
+   ``plan_sets`` only reads ``exercise_id``/``custom_exercise_id``/
+   ``target_reps``/``warmup_sets``/``target_sets``/``drop_sets`` off
+   whatever it's given (exactly one of the first two -- see
+   :doc:`data_model`'s "Database split" -- resolved via ``.exercise_ref``
+   into the collision-free key history lookups key off of), so a caller
+   with no ``TemplateExercise`` (generated workouts, step 10 below) passes
+   a plain ``SetPlanSpec`` with the same fields instead:
 
    a. Load ``UserSettings`` (progression method, load step, weight unit).
    b. Find that exercise's most recent **completed** session
@@ -142,10 +145,14 @@ Adding a set
    exercise, or one added mid-workout to a workout that's already
    running), there's nothing real to copy yet, so it gets a progressive
    overload suggestion instead: ``plan_sets(SetPlanSpec(exercise_id=...,
-   target_sets=1))``, written to the new set's ``planned_*`` columns, not
-   its real ones (:doc:`features/progressive_overload`). This is the same
+   custom_exercise_id=..., target_sets=1))``, copying whichever of the two
+   the ``WorkoutExercise`` itself has, written to the new set's
+   ``planned_*`` columns, not its real ones
+   (:doc:`features/progressive_overload`). This is the same
    ``plan_sets``/``SetPlanSpec`` pairing steps 3-4 above and "generating a
-   workout" below both use.
+   workout" below both use -- the latter via ``SetPlanSpec.for_exercise``,
+   a small constructor that fills in whichever field a plain exercise
+   object (not already a ``WorkoutExercise``) actually is.
 3. If this exercise is part of a :doc:`superset <features/supersets>`,
    ``equalize_workout_superset_sets`` (below) pads its paired exercise up
    to match, after re-reading this exercise's own set count (it was
@@ -158,42 +165,49 @@ Linking a superset
 ``services/supersets.py`` holds all of this; both templates and
 workouts call into the same functions.
 
-- **Forming a pair** — ``POST /api/workouts/:id/exercises/link {first_id,
-  second_id}`` (``routes/workouts.py:link_workout_exercises``), or, for a
-  template, just sending the same ``superset_group`` value on two
-  adjacent entries in the ``exercises`` array of a normal template save.
-  Either way, ``link_pair``: breaks whatever either exercise was
-  previously paired with (freeing its old partner back to
-  ``superset_group: null``), allocates a fresh group id
+- **Linking (forming or extending a chain)** — ``POST
+  /api/workouts/:id/exercises/link {first_id, second_id}``
+  (``routes/workouts.py:link_workout_exercises``), or, for a template,
+  just sending the same ``superset_group`` value on adjacent entries in
+  the ``exercises`` array of a normal template save. Either way,
+  ``link_pair`` joins whichever existing chain(s) either exercise is
+  already part of, rather than always starting fresh: if one side
+  already has a group, the other side adopts it (extending the chain by
+  one); if both sides already have *different* groups, every member of
+  one chain is reassigned to the other's group (merging two chains into
+  one); only when neither side has a group yet is a new one allocated
   (``max(existing) + 1`` within that template's/workout's own
-  exercises), and sets it on both. A workout pairing then calls
-  ``equalize_workout_superset_sets`` to catch the shorter member's set
-  count up immediately, rather than leaving them uneven until the next
-  set is logged.
-- **Breaking a pair** — ``PATCH /api/workouts/:id/exercises/:id
-  {superset_group: null}`` (``unlink``) clears *both* sides, since a pair
-  only exists as two. The same route rejects a non-null value outright
-  (400) — pairing has to set both sides in one transaction, which a
-  single exercise's PATCH can't do; that's what the ``link`` endpoint is
-  for. A template save instead just omits ``superset_group`` from both
-  entries.
+  exercises). A workout link then calls ``equalize_workout_superset_sets``
+  to catch every member's set count up immediately, rather than leaving
+  them uneven until the next set is logged.
+- **Removing one member** — ``PATCH /api/workouts/:id/exercises/:id
+  {superset_group: null}`` (``unlink``) clears *only* that one
+  exercise's own membership, leaving every other member (on either side
+  of it, if it was in the middle of a chain) untouched, followed by
+  ``normalize_superset_groups`` to dissolve either side if that left it
+  down to a single member. The same route rejects a non-null value
+  outright (400) — forming a link has to set both sides in one
+  transaction, which a single exercise's PATCH can't do; that's what the
+  ``link`` endpoint is for. A template save instead just omits
+  ``superset_group`` from the entry being removed.
 - **Staying valid under reordering** — ``normalize_superset_groups``
   walks a workout's or template's exercises in position order and
-  dissolves any run that isn't *exactly* a contiguous pair: a lone
-  survivor (its partner moved away, or was removed) is freed, and a run
-  of three or more (shouldn't normally happen, since pairing always
-  breaks a longer run first, but could follow unusual direct API use)
-  keeps the first two and frees the rest. Called after every reorder,
-  link, unlink and exercise removal — a superset's membership is always
-  re-derived from current positions, never left stale.
+  dissolves any run that isn't at least two members long: a lone
+  survivor (every other member of its group moved away, was removed, or
+  was itself just unlinked) is freed back to ``superset_group: null``. A
+  run of two or more — a "giant set" is just a longer run — is left
+  alone. Called after every reorder, link, unlink and exercise removal —
+  a superset's membership is always re-derived from current positions,
+  never left stale.
 - **Forcing equal set counts** — ``sync_template_superset_sets`` (a
-  template save) sets every paired member's ``target_sets`` to the first
-  member's value. ``equalize_workout_superset_sets`` (a workout) pads
-  every paired member's sets up to the longest member's count by
+  template save) sets every linked member's ``target_sets`` to the
+  first member's value. ``equalize_workout_superset_sets`` (a workout)
+  pads every linked member's sets up to the longest member's count by
   appending empty ones — never removes any; shrinking only happens
   through an explicit, single-exercise ``delete_set``, which fans out to
-  its pair's same-position set itself (so both really do drop together,
-  not just "whichever the request happened to target").
+  every other member's same-position set itself (so the whole group
+  really does drop together, not just "whichever the request happened
+  to target").
 
 Generating a workout
 ----------------------
@@ -206,7 +220,11 @@ Generating a workout
 2. ``services/recency.py:days_since_trained(today)`` — the one place this
    is computed — returns, per canonical muscle slug, days since the most
    recent completed, non-warm-up, non-drop-set, non-stretch working set
-   that worked it. A muscle never trained at all is simply absent.
+   that worked it. A muscle never trained at all is simply absent. Looks
+   up a catalog exercise's muscles via ``ExerciseMuscle`` and a custom
+   one's via its own JSON columns separately (two queries, not one join
+   — the two live in different databases now; see :doc:`data_model`'s
+   "Database split") and combines the results.
 3. ``overdue(d) = min(d, 60) + 1`` for every muscle with a value — caps
    how much one extremely stale muscle can dominate an average.
 4. ``current_days`` keeps only muscles trained within the last 60 days
@@ -237,14 +255,20 @@ Generating a workout
    running out widens to progressively more of the ranked groups before
    finally falling back to the single most overdue exercise overall.
    ``familiar_first`` tries only already-logged exercises first, in every
-   step, before falling back to the full catalog (including never-logged
-   ones).
+   step, before falling back to the full candidate pool — every catalog
+   exercise plus this user's own custom ones — including never-logged
+   ones. Candidates are deduplicated by ``.exercise_ref`` (not a bare id,
+   which a catalog and a custom exercise can share — see
+   :doc:`data_model`'s "Database split"), so the same pick is never
+   counted twice across the two tables.
 9. If ``stretching``/``cardio`` were asked for, one more pick each, from
    that pool only, by overall overdue-ness (not restricted to the chosen
    groups).
 10. ``create_generated_workout`` names the workout after its strength
     exercises' groups (e.g. "Chest, Back & Legs"). For each exercise, it
-    builds a ``sets_plan.SetPlanSpec`` (3 working sets for a
+    builds a ``sets_plan.SetPlanSpec`` via ``SetPlanSpec.for_exercise``
+    (which fills in whichever of ``exercise_id``/``custom_exercise_id``
+    the exercise actually is — 3 working sets for a
     ``weight_reps``/``bodyweight_reps`` exercise, 1 otherwise, no
     warm-ups/drops, no rep-range override) and runs it through the same
     ``plan_sets``/``make_planned_sets`` pair step 3 above uses — so a

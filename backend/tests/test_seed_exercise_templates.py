@@ -107,6 +107,27 @@ def test_seed_creates_legacy_and_repdb_templates(app, datasets):
     assert treadmill.app_muscle_group.name == "Cardio"
 
 
+def test_bodyweight_apparatus_exercises_are_tracked_as_bodyweight_reps(app, datasets):
+    """A pull-up/dip/rings/suspension-trainer move adds no external weight any more than a
+    push-up does, and this app's own equipment classification already calls all of those
+    "bodyweight" equipment (REPDB_EQUIPMENT_TO_TYPE/EQUIPMENT_TO_TYPE) -- tracking_type has to
+    agree, or the exercise's strength/muscle-worked calculations silently treat its usual
+    zero *added* weight as zero *real* load (see WorkoutSet.effective_weight). RepDB's own
+    `is_bodyweight` flag is narrower (reserved for moves needing literally no equipment) and
+    isn't the right signal here, hence `is_bodyweight=False` below despite that."""
+    datasets.write(
+        legacy=[_legacy("0002", "legacy pull up", equipment="body weight")],
+        repdb=[_repdb("pull-up", "Pull-Up", equipment="pull_up_bar", is_bodyweight=False)],
+    )
+    seed(app)
+
+    legacy_pullup = _by_name("legacy pull up")
+    assert (legacy_pullup.equipment, legacy_pullup.tracking_type) == ("bodyweight", "bodyweight_reps")
+
+    repdb_pullup = _by_name("Pull-Up")
+    assert (repdb_pullup.equipment, repdb_pullup.tracking_type) == ("bodyweight", "bodyweight_reps")
+
+
 def test_seed_is_idempotent(app, datasets):
     datasets.write(legacy=[_legacy("0001", "mystery move")], repdb=[_repdb("a-move", "A Move")])
     seed(app)
