@@ -113,6 +113,29 @@ function StrengthSummaryLine({ score, scoredMuscles }: { score: number | null; s
   )
 }
 
+/** This exercise's own share of the workout's strength score, in percentage points -- e.g.
+ * "+0.8%" next to a header reading "+3.2% stronger than your usual". See
+ * WorkoutStrength.exercises: these are additive across a workout's exercises, in the same log
+ * space the score itself is computed in. Renders nothing for a zero (or not-yet-known)
+ * contribution -- the caller doesn't need its own check before rendering this. */
+export function ContributionBadge({ pct }: { pct: number | undefined }) {
+  if (!pct) return null
+  const rounded = Math.round(pct * 10) / 10
+  if (rounded === 0) return null
+  const sign = rounded > 0 ? '+' : ''
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums ${
+        rounded > 0 ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'
+      }`}
+      title={`This exercise's own share of the workout's strength score (${sign}${rounded}%)`}
+    >
+      {sign}
+      {rounded}%
+    </span>
+  )
+}
+
 function StrengthLegend() {
   const edge = `${Math.round(SATURATION * 100)}%`
   return (
