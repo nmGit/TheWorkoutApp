@@ -549,15 +549,31 @@ def test_bodyweight_exercise_progression_activates_from_reps(client, pushup):
 
 
 def test_bodyweight_exercise_progression_adds_load_at_top_of_range(client, pushup):
-    """Once the top of the rep range is reached, the usual load step is added -- as *added*
-    weight, converted back from the target effective (body weight + added) load using today's
-    logged body weight, not the effective load itself."""
+    """Once the top of the rep range is reached, the usual load step is added on top of last
+    session's own *added* weight directly -- not re-derived through today's body weight."""
     client.post("/api/bodyweight", json={"weight": 150, "unit": "lbs"})
     _finished_session(client, pushup.id, [(0, 12), (0, 12)])
     tid = _template_with(client, pushup.id)
 
     sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
     assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(5, 8), (5, 8)]
+
+
+def test_bodyweight_exercise_progression_ignores_body_weight_noise_between_sessions(client, pushup):
+    """Body weight fluctuating day to day (water weight, a different scale) between the logged
+    session and today must not leak into the *added*-weight suggestion -- there's no reason a
+    pure rep increase (double progression, not reached) should ever suggest a fractional vest
+    weight just because the scale read differently today."""
+    client.post("/api/bodyweight", json={"weight": 150, "unit": "lbs"})
+    _finished_session(client, pushup.id, [(0, 8), (0, 8)])
+    # Body weight read differently today -- nothing to do with this exercise's own progress.
+    client.post("/api/bodyweight", json={"weight": 147.3, "unit": "lbs"})
+    tid = _template_with(client, pushup.id)
+
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    # Same as if body weight hadn't moved at all: a rep added, added weight still exactly 0 --
+    # not some fractional value derived from the 2.7 lb body-weight swing.
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(0, 9), (0, 9)]
 
 
 def test_progression_settings_are_validated(client):

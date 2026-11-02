@@ -12,6 +12,13 @@ before the fix stays weight_reps until backfilled here, so its strength score / 
 display / 1RM silently floors at the exercise's usual 0 *added* weight instead of body weight +
 added weight (see WorkoutSet.effective_weight).
 
+IMPORTANT, and easy to miss: this script only flips the catalog row's own tracking_type. Any
+WorkoutSet already logged against one of these exercises has its effective_weight *stored*
+(see WorkoutSet.effective_weight), computed under the old, wrong tracking_type -- flipping the
+catalog row alone does not fix those already-logged sets. Always re-run
+``scripts/backfill_effective_weight.py`` immediately after this one, for real (not --dry-run),
+whenever this script actually changes anything.
+
 Narrow and safe to re-run: only ever flips ExerciseTemplate.tracking_type from "weight_reps" to
 "bodyweight_reps", and only where equipment == "bodyweight" -- never touches equipment, name, or
 any other field, and never touches a cardio/time exercise (those never matched weight_reps to
@@ -44,6 +51,12 @@ def backfill(dry_run: bool = False) -> None:
 
     db.session.commit()
     print(f"\nBackfilled {len(rows)} exercise(s).")
+    if rows:
+        print(
+            "\nNow re-run scripts/backfill_effective_weight.py (for real, not --dry-run) --"
+            " any set already logged against these exercises still has its effective_weight"
+            " computed under the old tracking_type until that runs too."
+        )
 
 
 if __name__ == "__main__":

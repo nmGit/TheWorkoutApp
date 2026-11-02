@@ -95,6 +95,84 @@ def test_1rm_for_bodyweight_exercise_is_none_without_any_logged_body_weight(app)
         assert s.estimated_one_rm() is None
 
 
+def test_bodyweight_set_left_completely_blank_still_counts_body_weight_as_the_load(app):
+    """A bodyweight_reps set can be completed with `weight` (and so `weight_unit`) left null --
+    reachable the very first time an exercise is ever logged, before any history exists to
+    plan a value from (see routes/workouts.py's _require_weight_if_completing, which
+    deliberately doesn't require a weight for this tracking type). That must mean 0 *added*
+    weight, same as explicitly entering 0 -- not "unknown load", which would silently exclude
+    every brand-new bodyweight exercise's first session from scoring entirely."""
+    from app.extensions import db
+    from app.models.bodyweight import BodyweightEntry
+    from app.models.exercise_template import ExerciseTemplate
+    from app.models.settings import SETTINGS_SINGLETON_ID, UserSettings
+    from app.models.workout import Workout, WorkoutExercise, WorkoutSet
+
+    with app.app_context():
+        db.session.add(UserSettings(id=SETTINGS_SINGLETON_ID, weight_unit="kg"))
+        db.session.add(BodyweightEntry(recorded_at=date(2026, 1, 1), weight=80, unit="kg"))
+        pullup = ExerciseTemplate(name="pull up", tracking_type="bodyweight_reps")
+        db.session.add(pullup)
+        db.session.flush()
+        workout = Workout(name="w", started_at=datetime(2026, 1, 5, 9, 0, 0))
+        db.session.add(workout)
+        db.session.flush()
+        we = WorkoutExercise(workout_id=workout.id, exercise_id=pullup.id, position=0)
+        db.session.add(we)
+        db.session.flush()
+        # Nothing typed at all, and (unlike the other tests here) no planned_weight_unit to
+        # fall back on either -- weight_unit stays null too, same as weight.
+        s = WorkoutSet(workout_exercise_id=we.id, position=0, reps=8, completed=True)
+        db.session.add(s)
+        db.session.flush()
+
+        assert s.weight is None and s.weight_unit is None  # nothing was ever typed
+        # effective_weight still needs a unit to be expressed in -- falls back to Settings'.
+        assert round(s.effective_weight, 2) == 80.0
+        assert round(s.estimated_one_rm(), 2) == round(80 * (1 + 8 / 30.0), 2)
+
+
+def test_effective_weight_is_not_recomputed_by_an_unrelated_field_update(app):
+    """effective_weight is documented as frozen at write time; an update that doesn't touch
+    `weight`/`weight_unit` must not quietly re-derive it from today's body-weight log, even
+    though the before_update event still fires for that update."""
+    from app.extensions import db
+    from app.models.bodyweight import BodyweightEntry
+    from app.models.exercise_template import ExerciseTemplate
+    from app.models.workout import Workout, WorkoutExercise, WorkoutSet
+
+    with app.app_context():
+        db.session.add(BodyweightEntry(recorded_at=date(2026, 1, 1), weight=80, unit="kg"))
+        pushup = ExerciseTemplate(name="push up", tracking_type="bodyweight_reps")
+        db.session.add(pushup)
+        db.session.flush()
+        workout = Workout(name="w", started_at=datetime(2026, 1, 5, 9, 0, 0))
+        db.session.add(workout)
+        db.session.flush()
+        we = WorkoutExercise(workout_id=workout.id, exercise_id=pushup.id, position=0)
+        db.session.add(we)
+        db.session.flush()
+        s = WorkoutSet(workout_exercise_id=we.id, position=0, weight=0, weight_unit="kg", reps=8)
+        db.session.add(s)
+        db.session.flush()
+        assert round(s.effective_weight, 2) == 80.0
+
+        # Body weight on this same date is later corrected -- a change that would, if the
+        # listener recomputed unconditionally, retroactively shift this set's own load too.
+        BodyweightEntry.query.filter_by(recorded_at=date(2026, 1, 1)).first().weight = 100
+        db.session.flush()
+        # An update to a field effective_weight has nothing to do with.
+        s.rpe = 8
+        db.session.flush()
+
+        assert round(s.effective_weight, 2) == 80.0  # unchanged, not re-derived to 100
+
+        # Touching weight/weight_unit themselves still recomputes, as it should.
+        s.weight = 5
+        db.session.flush()
+        assert round(s.effective_weight, 2) == 105.0
+
+
 def test_default_metric_for_bodyweight_exercise_is_est_1rm():
     from app.models.exercise_template import ExerciseTemplate
     from app.services.stats import default_metric_for

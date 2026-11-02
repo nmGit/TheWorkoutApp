@@ -171,8 +171,11 @@ export interface WorkoutStrength {
   exercises: Record<string, number>
 }
 
-/** One completed workout's strength score. `score` is null during the warm-up period. */
-export interface StrengthPoint extends WorkoutStrength {
+/** One completed workout's strength score, as GET /api/strength/history lists it. `score` is
+ * null during the warm-up period. Omits `exercises` -- that endpoint builds each point by hand
+ * and never includes it (only GET /api/workouts/:id/strength, WorkoutStrength's other use,
+ * does), so reading it here would type-check but throw at runtime. */
+export interface StrengthPoint extends Omit<WorkoutStrength, 'exercises'> {
   workout_id: number
   date: string
   template_id: number | null
