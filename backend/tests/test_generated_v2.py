@@ -223,6 +223,38 @@ def test_exercise_contribution_sums_to_the_workout_score_and_is_attributed_corre
     total_contribution = sum(point["exercises"].values()) / 100
     assert total_contribution == pytest.approx(math.log(point["score"]), abs=0.01)
 
+    # Not just "sums correctly" -- each exercise's own number is actually *its* number. Bench
+    # went 100kg -> 110kg and curl 20kg -> 22kg, the same 1.1x change; since the two share no
+    # muscle, each contributes exactly change/4 (1 counting set, share 1, SHRINKAGE 1, 2 scored
+    # muscles) -- and, being symmetric, each must equal the other, not be swapped.
+    expected_each = round(math.log(1.1) / 4 * 100, 2)
+    assert point["exercises"][bench_we_id] == pytest.approx(expected_each)
+    assert point["exercises"][curl_we_id] == pytest.approx(expected_each)
+
+
+def test_two_blocks_of_the_same_exercise_get_independent_contributions(app):
+    """The same exercise in two separate blocks of one workout (two distinct WorkoutExercise
+    rows, not two sets of one block) gets two independent contribution numbers, correctly
+    attributed by WorkoutExercise id -- not merged into one just because they share an
+    exercise_ref (both compare against the very same baseline, since that's keyed by
+    exercise_ref, but each block's own session value still moves its own number)."""
+    with app.app_context():
+        bench = _exercise("bench", ["pectoralis_major"])
+        workouts = [_session(bench, day, 100) for day in range(3)]
+        combined, (we1, we2) = _multi_exercise_session(10, [(bench, 110, 5), (bench, 90, 5)])
+        workouts.append(combined)
+        db.session.commit()
+        workouts.sort(key=lambda w: w.started_at)
+
+        series = score_series_v2(workouts)
+        point = next(p for p in series if p["workout_id"] == combined.id)
+
+    assert set(point["exercises"]) == {we1, we2}
+    # 110kg improved over the 100kg baseline; 90kg regressed -- opposite signs, not identical
+    # numbers duplicated across both blocks.
+    assert point["exercises"][we1] > 0
+    assert point["exercises"][we2] < 0
+
 
 def test_an_exercise_with_no_scored_muscle_contributes_nothing(app):
     """An exercise still in its own warm-up period (no baseline yet) doesn't show up in
