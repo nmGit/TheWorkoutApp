@@ -13,7 +13,7 @@ import { Button, DragHandle, LoadingState, PageTitle, ViewExerciseButton } from 
 import { useUndo } from '../context/UndoContext'
 import { useDragReorder } from '../hooks/useDragReorder'
 import { refForExercise } from '../lib/exerciseRef'
-import { isPaired, toggleSupersetLink } from '../lib/supersets'
+import { isPaired, normalizeSupersetGroups, toggleSupersetLink } from '../lib/supersets'
 import type { ExerciseTemplate, TemplateExercise } from '../types'
 
 export function TemplateEditorPage() {
@@ -69,7 +69,10 @@ export function TemplateEditorPage() {
 
   const removeExercise = (index: number) => {
     const previous = exercises
-    persist(exercises.filter((_, i) => i !== index))
+    // Removing the middle of a chain can leave either side down to a single, no-longer-"super"
+    // set -- normalize here so the local state doesn't flash a bogus lone-member superset bar
+    // before the next server round-trip would otherwise clean it up.
+    persist(normalizeSupersetGroups(exercises.filter((_, i) => i !== index)))
     showUndo({
       message: `Removed ${previous[index].exercise_name ?? 'exercise'}`,
       onUndo: () => persist(previous),
@@ -139,7 +142,11 @@ export function TemplateEditorPage() {
           const linkedBelow = isPaired(ex, exercises[i + 1])
           return (
             <div className="flex items-stretch gap-2">
-              <SupersetBar linkedAbove={isPaired(exercises[i - 1], ex)} linkedBelow={linkedBelow} />
+              <SupersetBar
+                linkedAbove={isPaired(exercises[i - 1], ex)}
+                linkedBelow={linkedBelow}
+                gapPx={8 /* matches this list's space-y-2 below */}
+              />
               <div className="min-w-0 flex-1">
                 <ExerciseCard
                   title={ex.exercise_name}
@@ -155,8 +162,8 @@ export function TemplateEditorPage() {
                                 {
                                   label: linkedBelow ? 'Remove from superset' : 'Superset with next',
                                   title: linkedBelow
-                                    ? 'Unlink this exercise and the next one'
-                                    : 'Pair this exercise with the next one, forcing the same working-set count',
+                                    ? 'Remove this exercise from its superset'
+                                    : 'Link with the next exercise, forcing the same working-set count -- extends an existing superset into a giant set if either one is already in one',
                                   onClick: () => persist(toggleSupersetLink(exercises, i)),
                                 },
                               ]
