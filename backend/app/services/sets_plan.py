@@ -11,12 +11,10 @@ Warm-ups are never used to progress a load: only working sets count.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from app.models.exercise_reference import exercise_ref_filter
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.models.settings import UserSettings
-from app.services.strength import body_weight_kg_on
 from app.services.units import convert_weight
 
 DEFAULT_REP_RANGE = (8, 12)
@@ -153,15 +151,19 @@ def progress_working(working: list, rep_range: tuple[int, int], settings: UserSe
     # `weight` so far is the target *effective* load -- the same quantity just compared above.
     # For a bodyweight_reps exercise that's body weight + added weight, but the planned_weight
     # this returns lands in a set's own `weight` field, which for a bodyweight_reps set holds
-    # only the added part (see WorkoutSet.effective_weight) -- so it's converted back to an
-    # added weight here, using today's logged body weight (the exercise is about to be
-    # performed now, not on the date of the session being progressed from).
+    # only the added part (see WorkoutSet.effective_weight). Progressing the *added* weight
+    # itself the same way a weight_reps exercise's weight would -- last session's own added
+    # weight, plus a load step only when the effective target actually moved -- rather than
+    # re-deriving it from today's logged body weight: that would turn ordinary day-to-day
+    # body-weight noise (water weight, a different scale) into a meaningless fractional "add a
+    # 1.3 lb vest" every time body weight merely drifted, even on a session that only added a
+    # rep (double progression, not reached) and was never meant to change the load at all.
     exercise = logged[0].workout_exercise.exercise
     if exercise is not None and exercise.tracking_type == "bodyweight_reps":
-        body_kg = body_weight_kg_on(datetime.now(timezone.utc))
-        if body_kg is None:
-            return None  # shouldn't happen -- logged already required an effective_weight
-        added_kg = convert_weight(weight, unit, "kg") - body_kg
+        anchor_added = float(anchor.weight) if anchor.weight is not None else 0.0
+        added_kg = convert_weight(anchor_added, anchor.weight_unit or unit, "kg")
+        if weight != anchor_weight:  # the effective target actually moved -- add a real step
+            added_kg += convert_weight(step, unit, "kg")
         weight = round(convert_weight(max(added_kg, 0.0), "kg", unit), 2)
 
     return weight, unit, reps, changed
