@@ -530,6 +530,36 @@ def test_linear_progression_adds_load_when_the_target_is_hit(client, bench_press
     assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(140, 8), (140, 8)]
 
 
+def test_bodyweight_exercise_progression_activates_from_reps(client, pushup):
+    """Before effective_weight, a bodyweight_reps set's own `weight` field is just its added
+    weight -- almost always 0 -- so progression's old `float(s.weight) > 0` check meant such a
+    set was never "logged" at all, and progression could never activate for a pure-bodyweight
+    exercise. Fixed by reading effective_weight (body weight + added weight) instead -- see
+    WorkoutSet.effective_weight."""
+    client.post("/api/bodyweight", json={"weight": 150, "unit": "lbs"})
+    _finished_session(client, pushup.id, [(0, 8), (0, 8)])
+    tid = _template_with(client, pushup.id)
+
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    # Double progression (the default): the top of the default 8-12 range hasn't been reached,
+    # so a rep is added and the *added* weight itself stays put (0 -> 0).
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(0, 9), (0, 9)]
+    assert all(s["planned_is_progressed"] for s in sets)
+    assert all(s["planned_progression_active"] for s in sets)
+
+
+def test_bodyweight_exercise_progression_adds_load_at_top_of_range(client, pushup):
+    """Once the top of the rep range is reached, the usual load step is added -- as *added*
+    weight, converted back from the target effective (body weight + added) load using today's
+    logged body weight, not the effective load itself."""
+    client.post("/api/bodyweight", json={"weight": 150, "unit": "lbs"})
+    _finished_session(client, pushup.id, [(0, 12), (0, 12)])
+    tid = _template_with(client, pushup.id)
+
+    sets = client.post("/api/workouts", json={"template_id": tid}).get_json()["exercises"][0]["sets"]
+    assert [(s["planned_weight"], s["planned_reps"]) for s in sets] == [(5, 8), (5, 8)]
+
+
 def test_progression_settings_are_validated(client):
     assert client.patch("/api/settings", json={"progression_method": "bogus"}).status_code == 400
     assert client.patch("/api/settings", json={"experience": "pro"}).status_code == 400

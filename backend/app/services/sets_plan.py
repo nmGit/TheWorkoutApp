@@ -11,10 +11,12 @@ Warm-ups are never used to progress a load: only working sets count.
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from app.models.exercise_reference import exercise_ref_filter
 from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.models.settings import UserSettings
+from app.services.strength import body_weight_kg_on
 from app.services.units import convert_weight
 
 DEFAULT_REP_RANGE = (8, 12)
@@ -108,16 +110,24 @@ def progress_working(working: list, rep_range: tuple[int, int], settings: UserSe
     """
     if settings.progression_method == "off":
         return None
-    logged = [s for s in working if s.weight is not None and s.reps is not None and float(s.weight) > 0]
+    # effective_weight, not weight -- see WorkoutSet.effective_weight. A bodyweight_reps set
+    # with the ordinary 0 added weight still has a real, positive effective_weight (body
+    # weight alone), so it's "logged" the same as any other set now -- it used to be excluded
+    # here (float(s.weight) > 0 was never true for it), which silently kept progression from
+    # ever activating for a pure-bodyweight exercise.
+    logged = [
+        s for s in working if s.effective_weight is not None and s.reps is not None
+        and float(s.effective_weight) > 0
+    ]
     if not logged:
         return None
 
     low, high = rep_range
-    top_kg = max(convert_weight(float(s.weight), s.weight_unit, "kg") for s in logged)
+    top_kg = max(convert_weight(float(s.effective_weight), s.weight_unit, "kg") for s in logged)
     top = [
         s
         for s in logged
-        if convert_weight(float(s.weight), s.weight_unit, "kg") >= top_kg * (1 - TOP_TOLERANCE)
+        if convert_weight(float(s.effective_weight), s.weight_unit, "kg") >= top_kg * (1 - TOP_TOLERANCE)
     ]
     unit = settings.weight_unit
     step = settings.load_step_lb if unit == "lbs" else settings.load_step_kg
@@ -126,7 +136,7 @@ def progress_working(working: list, rep_range: tuple[int, int], settings: UserSe
     reached = all(s.reps >= high for s in top)
     fewest = min(s.reps for s in top)
     anchor = top[0]
-    anchor_weight = round(convert_weight(float(anchor.weight), anchor.weight_unit, unit), 2)
+    anchor_weight = round(convert_weight(float(anchor.effective_weight), anchor.weight_unit, unit), 2)
 
     if settings.progression_method == "linear":
         weight = round(top_weight + step, 2) if reached else round(top_weight, 2)
@@ -139,6 +149,21 @@ def progress_working(working: list, rep_range: tuple[int, int], settings: UserSe
         weight, reps = round(top_weight, 2), min(high, max(low, fewest + 1))
 
     changed = weight != anchor_weight or reps != anchor.reps
+
+    # `weight` so far is the target *effective* load -- the same quantity just compared above.
+    # For a bodyweight_reps exercise that's body weight + added weight, but the planned_weight
+    # this returns lands in a set's own `weight` field, which for a bodyweight_reps set holds
+    # only the added part (see WorkoutSet.effective_weight) -- so it's converted back to an
+    # added weight here, using today's logged body weight (the exercise is about to be
+    # performed now, not on the date of the session being progressed from).
+    exercise = logged[0].workout_exercise.exercise
+    if exercise is not None and exercise.tracking_type == "bodyweight_reps":
+        body_kg = body_weight_kg_on(datetime.now(timezone.utc))
+        if body_kg is None:
+            return None  # shouldn't happen -- logged already required an effective_weight
+        added_kg = convert_weight(weight, unit, "kg") - body_kg
+        weight = round(convert_weight(max(added_kg, 0.0), "kg", unit), 2)
+
     return weight, unit, reps, changed
 
 

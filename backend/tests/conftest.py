@@ -50,3 +50,16 @@ def bench_press(app, chest_group):
     db.session.add(exercise)
     db.session.commit()
     return exercise
+
+
+@pytest.fixture()
+def pushup(app, chest_group):
+    exercise = ExerciseTemplate(
+        name="Push Up",
+        muscle_group_id=chest_group.id,
+        equipment="bodyweight",
+        tracking_type="bodyweight_reps",
+    )
+    db.session.add(exercise)
+    db.session.commit()
+    return exercise
