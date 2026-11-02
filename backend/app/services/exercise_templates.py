@@ -87,6 +87,19 @@ def equipment_type_for(equipment: str | None) -> str:
     return EQUIPMENT_TO_TYPE.get(equipment.lower(), "other")
 
 
+def tracking_type_for_legacy(item: dict) -> str:
+    if item.get("body_part") == "cardio":
+        return "cardio"
+    # Our own equipment classification (EQUIPMENT_TO_TYPE's "body weight" -> "bodyweight"),
+    # not a separate dataset flag -- the original dataset has none, but its equipment field
+    # already says plainly enough when nothing but body weight is used. See
+    # WorkoutSet.effective_weight for why this matters: a bodyweight exercise's added weight
+    # is tracked on top of logged body weight, not as a dead-zero `weight_reps` load.
+    if equipment_type_for(item.get("equipment")) == "bodyweight":
+        return "bodyweight_reps"
+    return "weight_reps"
+
+
 # --- RepDB (external/repdb-exercise-dataset) -------------------------------
 #
 # Used only when *creating* a new template from a RepDB entry, to fill the
@@ -189,6 +202,12 @@ def tracking_type_for_repdb(item: dict) -> str:
         return "cardio"
     if item.get("category") == "stretching" or item.get("force_type") == "static":
         return "time"
-    if item.get("is_bodyweight"):
+    # Our own equipment classification, not RepDB's `is_bodyweight` flag -- RepDB reserves that
+    # for moves needing literally no equipment at all, so it's False for a pull-up, a dip, ring
+    # work or suspension-trainer work even though none of those add external weight either; our
+    # own REPDB_EQUIPMENT_TO_TYPE already calls all of those "bodyweight" equipment (you can
+    # still add weight via a belt/vest, same as any other bodyweight_reps exercise -- see
+    # WorkoutSet.effective_weight), so it's the more accurate signal for what to track by.
+    if equipment_type_for_repdb(item.get("equipment")) == "bodyweight":
         return "bodyweight_reps"
     return "weight_reps"
