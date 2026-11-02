@@ -147,14 +147,22 @@ def _compute_effective_weight(target: WorkoutSet):
     runs at flush time on a set that may have just been constructed with only
     ``workout_exercise_id`` set -- the relationship itself isn't guaranteed loaded yet, but the
     id always is (it's a required column)."""
-    if target.weight is None:
-        return None
-    weight = float(target.weight)
     we = db.session.get(WorkoutExercise, target.workout_exercise_id)
     exercise = we.exercise if we else None
-    if exercise is not None and exercise.tracking_type == "bodyweight_reps":
+    is_bodyweight = exercise is not None and exercise.tracking_type == "bodyweight_reps"
+    if target.weight is None and not is_bodyweight:
+        return None
+    # A bodyweight_reps set completed with nothing typed (no weight, and -- the one time that
+    # can happen with nothing to even fall back on -- no planned_weight either, the exercise's
+    # very first ever logged set, before any history exists to suggest one; see
+    # routes/workouts.py's _require_weight_if_completing, which deliberately doesn't block this
+    # the way it does for weight_reps) means 0 *added* weight, same as explicitly entering 0 --
+    # not "unknown load": body weight alone is still the set's real load either way.
+    weight = float(target.weight) if target.weight is not None else 0.0
+    if is_bodyweight:
         # Local imports: services/strength.py imports this module at module load, so importing
         # it back at module scope here would be circular.
+        from app.models.settings import SETTINGS_SINGLETON_ID, UserSettings
         from app.services.strength import body_weight_kg_on
         from app.services.units import convert_weight
 
@@ -162,19 +170,42 @@ def _compute_effective_weight(target: WorkoutSet):
         body_kg = body_weight_kg_on(when) if when is not None else None
         if body_kg is None:
             return None
-        added_kg = convert_weight(weight, target.weight_unit, "kg")
-        weight = convert_weight(body_kg + added_kg, "kg", target.weight_unit)
+        # weight_unit can be blank in the same no-weight-no-history case above -- effective_weight
+        # still needs some unit to be expressed in, so it falls back to the same default add_set
+        # itself would use (the user's own settings), not to `weight`'s own unit (which doesn't
+        # exist here either). A plain read, not UserSettings.get() -- that get-or-creates with
+        # its own add()/commit() on a first-ever read, which isn't legal mid-flush, as this is.
+        settings = db.session.get(UserSettings, SETTINGS_SINGLETON_ID)
+        unit = target.weight_unit or (settings.weight_unit if settings else "lbs")
+        added_kg = convert_weight(weight, unit, "kg")
+        weight = convert_weight(body_kg + added_kg, "kg", unit)
     return weight
 
 
 @event.listens_for(WorkoutSet, "before_insert")
-@event.listens_for(WorkoutSet, "before_update")
-def _set_effective_weight(mapper, connection, target: WorkoutSet):
-    """Keeps WorkoutSet.effective_weight in sync with `weight` on every write, from any code
+def _set_effective_weight_on_insert(mapper, connection, target: WorkoutSet):
+    """Keeps WorkoutSet.effective_weight in sync with `weight` on every insert, from any code
     path (a route, a script, a test fixture, ...) -- a single source of truth instead of every
     writer having to remember to compute it themselves, which is exactly the class of mistake
     (one call site quietly skipped) this project has hit more than once with similar
-    "derived field must be kept in sync by hand" designs. Runs unconditionally on every
-    update, not just ones that touch `weight` -- simpler and, at this app's data volumes,
-    cheap enough not to matter."""
+    "derived field must be kept in sync by hand" designs."""
+    target.effective_weight = _compute_effective_weight(target)
+
+
+@event.listens_for(WorkoutSet, "before_update")
+def _set_effective_weight_on_update(mapper, connection, target: WorkoutSet):
+    """Like _set_effective_weight_on_insert, but only recomputes when `weight`/`weight_unit`
+    themselves actually changed -- an update that just touches some other field (rpe,
+    completed, is_warmup, ...) leaves an already-logged set's effective_weight exactly as it
+    was, matching "frozen at write time" as documented on the column itself. Without this
+    check, *any* update at all would recompute unconditionally, silently re-deriving the value
+    from whatever body_weight_kg_on/the exercise's tracking_type says *now* -- quietly drifting
+    a set's historical load if either changed since, which is the one thing frozen-at-write-time
+    is supposed to prevent. (Those two dependencies genuinely can still go stale on their own --
+    an edited body-weight log entry, or a custom exercise's tracking_type changed after the
+    fact -- but that's scripts/backfill_effective_weight.py's job, a deliberate re-derivation,
+    not something an unrelated field's update should trigger as a side effect.)"""
+    state = db.inspect(target)
+    if not (state.attrs.weight.history.has_changes() or state.attrs.weight_unit.history.has_changes()):
+        return
     target.effective_weight = _compute_effective_weight(target)
